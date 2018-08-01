@@ -1,0 +1,2161 @@
+---
+title: "Concentration in the economic discipline."
+author: "Ernest Aigner and Florentin Glötzl"
+date: "August 2018"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+<style type="text/css">
+body{ /* Normal  */
+      font-size: 12px;
+	  font-family: serif;
+  }
+td {  /* Table  */
+  font-size: 12px;
+  font-family: serif;
+}
+h1.title {
+  font-size: 35;
+  color: DarkRed;
+  font-family: serif; 
+}
+h1 { /* Header 1 */
+  font-size: 24px;
+  color: DarkBlue;
+  font-family: serif;
+  border-bottom: 1px solid lightgrey;
+}
+h2 { /* Header 2 */
+    font-size: 20px;
+  color: DarkBlue;
+  font-family: serif;
+  border-bottom: 1px solid lightgrey;
+}
+h3 { /* Header 3 */
+  font-size: 16px;
+  font-family: serif;
+  border-bottom: 1px solid lightgrey;
+}
+h4 { /* Header 4 */
+  font-size: 12px;
+  font-family: serif;
+  border-bottom: 1px solid lightgrey;
+}
+h5 { /* Header 4 */
+  font-size: 12px;
+  font-family: serif;
+  border-bottom: 1px solid lightgrey;
+
+ }
+code.r{ /* Code block */
+    font-size: 10px;
+}
+pre { /* Code block - determines code spacing between lines */
+    font-size: 10px;
+}
+</style>
+
+
+# Intro
+
+The following code has been used to investigate six dimensions of concentration in economics The data was retrieved by Thompson Reuters' Web of Science. The insights drawn from this research are published by Florentin Glötzl and Ernest Aigner (2018) under the title 'Six Dimensions of Concentration in Economics: Evidence from a large-scale data set' in the Journal 'Science in Context'. We gratefully acknolwedge financial support by the Forschungsinstitut für Gesellschaftliche Weiterentwicklung (Research Institute for Societal Development). Both authors are located at the Institute for Ecological Economics, Department for Socioeconomics, Vienna University of Economics and Business; Welthandelsplatz 2/D5, 1020 Vienna, Austria. For questions regarding the code please contact Ernest Aigner (ernest.aigner@gmail.com).
+
+
+# Load settings
+
+```{r, warning=FALSE,echo=FALSE,message=FALSE}
+# Load Packages
+packs <- lapply(c("car","dendroextras","effects","ellipse","plyr","faraway","foreign","leaps","qdap","tm","rgl","lattice","qdap","rmarkdown","ngram","stringr","gtable","data.table","ReporteRs","igraph","ggplot2","ggthemes","tm","readxl","parallel","SnowballC","stringi","xlsx","topicmodels","knitr","ineq","xtable","zoo","gridExtra","DT","stringdist"),library,character.only=T,quietly=T,verbose=F)
+# Sys.setenv(RSTUDIO_PANDOC="C:/Program Files/RStudio/bin/pandoc");library(rmarkdown);render("EconData_Concentration.Rmd")
+
+bold <- function(x) {paste('{\\textbf{',x,'}}', sep ='')}
+summaryGini <- function(x) {round(c(Observations = length(x), summary(x),Gini = Gini(x), Skew = mean(x)/median(x)),2)}
+Gini <- function (x, corr = FALSE, na.rm = TRUE) 
+{
+    if (!na.rm && any(is.na(x))) 
+        return(NA_real_)
+    x <- as.numeric(na.omit(x))
+    n <- length(x)
+    x <- sort(x)
+    G <- sum(x * 1L:n)
+    G <- 2 * G/sum(x) - (n + 1L)
+    if (corr) 
+        G/(n - 1L)
+    else G/n
+}
+plot.Lc <- function(x, general=FALSE, lwd=2,xlab="p",ylab="L(p)",
+  main="Lorenz curve", las=1, ...)
+{
+    if(!general)
+      L <- x$L
+    else
+      L <- x$L.general
+    plot(x$p, L, type="l", main=main, lwd=lwd, xlab=xlab, ylab=ylab, xaxs="i",
+      yaxs="i", las=las, ...)
+    abline(0,max(L))
+}
+Lc <- function (x, n = rep(1, length(x)), plot = TRUE,main= NA) 
+{
+    ina <- !is.na(x)
+    n <- n[ina]
+    x <- as.numeric(x)[ina]
+    k <- length(x)
+    o <- order(x)
+    x <- x[o]
+    n <- n[o]
+    x <- n * x
+    p <- cumsum(n)/sum(n)
+    L <- cumsum(x)/sum(x)
+    p <- c(0, p)
+    L <- c(0, L)
+    L2 <- L * mean(x)/mean(n)
+    Lc <- list(p, L, L2)
+    names(Lc) <- c("p", "L", "L.general")
+    class(Lc) <- "Lc"
+    if (plot) 
+        plot(Lc, main=main)
+    Lc
+}
+dupl <- function(x) duplicated(x) | duplicated(x, fromLast=T)
+
+# Formatting
+th <- theme_minimal(base_size = 18) + theme(text=element_text(family="serif"),legend.position="bottom", panel.grid.major = element_line(colour = "grey"))
+theme_set(th)
+knitr::opts_chunk$set(cache=FALSE,echo=TRUE,warning=TRUE,message=TRUE,cache.lazy = FALSE, error=TRUE)
+options(scipen = 1000) #penalty for scientific notation
+options(digits = 3)
+options(knitr.kable.NA = '')	
+```
+
+# Data Import
+## WOS Data
+```{r data_import, warning=FALSE}
+
+# List files and read them into list
+## Before 2017
+files <- as.list(list.files("C:/Files/Files/CA/WOS/Records", recursive=T))
+nl <- lapply(files,function(x) try(fread(paste0("C:/Files/Files/CA/WOS/Records/",x),sep="\t")))
+# # show files quality
+# length(files)
+# length(nl)
+# di <- lapply(nl,dim)
+# table(unlist(lapply(di,"[[",2)))
+# table(unlist(lapply(di,"[[",1)))
+rm(files)
+# Merge to one list
+nl <- rbindlist(nl)
+# Name columns
+head <- as.character(names(fread("C:/Files/Files/CA/WOS/Header.txt",header=T)))
+head <- c(head[-1],"ZZ")
+setnames(nl,head)
+
+## 2017
+files <- as.list(list.files("C:/Files/Files/CA/WOS/Records2017", recursive=T))
+nl2017 <- lapply(files,function(x) try(fread(paste0("C:/Files/Files/CA/WOS/Records2017/",x),sep="\t")))
+# # show files quality
+# length(files)
+# length(nl2017)
+# di <- lapply(nl2017,dim)
+# table(unlist(lapply(di,"[[",2)))
+# table(unlist(lapply(di,"[[",1)))
+rm(files)
+# Merge to one list
+nl2017 <- rbindlist(nl2017)
+# Name columns
+head <- names(fread("C:/Files/Files/CA/WOS/Header2017.txt"))
+head <- c(head,"ZZ")
+setnames(nl2017,head)
+nl <- rbindlist(list(nl2017,nl),fill=T,use.names=T)
+
+# Remove entries that have been downloaded twice
+nl <- nl[!duplicated(nl$UT)]
+
+# # Add entries from crawler download
+# nlFF <- fread("D:/Desktop/CA - Not Dropbox/Citation Analysis/rLee/rFetchFull/nlFullFF.csv")
+# nlFF <- nlFF[!is.na(EP)]
+# nlFF[,c("AbstractEd","hetort","titleEd","V1","Pages","PID"):=NULL]
+# setnames(nlFF,1:10,c("SO","AF","TI","VL","IS","PY","AB","DE","TC","NR"))
+# nl[,c("ZZ","U1","U2"):=NULL]
+# nl <- rbind(nlFF,nl,use.names=T,fill=F)
+
+# Make everything upper case
+cols <- colnames(nl)[lapply(nl,class) == "character"]
+nl[,(cols) := lapply(.SD,toupper),.SDcols=cols]
+
+# Merge with Hetorodox Directory
+setnames(nl,"SO","journal") 
+nl[grep("ADVANCES IN ECONOMETRICS",journal),journal:="ADVANCES IN ECONOMETRICS"]
+nl[grep("ANNUAL REVIEW OF ECONOMICS",journal),journal:="ANNUAL REVIEW OF ECONOMICS"]
+nl[grep("ANNUAL REVIEW OF FINANCIAL ECONOMICS",journal),journal:="ANNUAL REVIEW OF FINANCIAL ECONOMICS"]
+nl[grep("ANNUAL REVIEW OF RESOURCE ECONOMICS",journal),journal:="ANNUAL REVIEW OF RESOURCE ECONOMICS"]
+nl[grep("NBER MACROECONOMICS ANNUAL",journal),journal:="NBER MACROECONOMICS ANNUAL"]
+nl[grep("ADVANCES ECOOMETRICS",journal),journal:="ADVANCES IN ECONOMETRICS"]
+
+# jou <- unique(nl$journal)
+# jou <- gsub("[[:punct:]]"," ",jou)
+# jou <- gsub("AND"," ",jou)
+# jou <- gsub("OR"," ",jou)
+# jou <- iconv(jou, "UTF-8", "ASCII//TRANSLIT")
+# write.csv(unique(nl$journal)[order(unique(nl$journal))],file="../../Daten/wosjournals.csv")
+
+hetort <- setDT(read.xlsx("../../Daten/hetort_table.xlsx",1,as.data.frame=TRUE,stringsAsFactors = F))
+hetort <- hetort[,c("journal","hencat","leeho"),with=F]
+hetort <- hetort[hencat == "FALSE",hencat:=NA]
+hetort <- hetort[,henho:=ifelse(is.na(hencat),0,1)]
+nl <- merge(nl,hetort,by.x="journal",by.y="journal")
+
+# Keep only Document Types that include "Article"
+# This is problematic as we have seen with the modigliani paper
+# nl <- nl[grep("article",DT,ignore.case=T),]
+nl[,PID:=unlist(lapply(strsplit(UT,split=":"),"[[",2))]
+
+# Remove punctuation from journals
+nl[,journal:=gsub("[[:punct:]]"," ",journal)]
+for (i in 1:5) nl[,journal:=gsub("  "," ",journal)]
+
+# colnames(nl)[] <- "note"
+# colnames(nl)[] <- "url"
+# colnames(nl)[] <- "TC"
+# colnames(nl)[] <- "NumberCR"
+# colnames(nl)[] <- "titleEd"
+# colnames(nl)[] <- "hetort"
+# colnames(nl)[] <- "AbstractEd"
+# colnames(nl)[] <- "KeywordsEd"
+# colnames(nl)[] <- "dom"
+# colnames(nl)[] <- "dom1st"
+# colnames(nl)[] <- "NumberCRFF"
+# colnames(nl)[] <- "NumberCRFFEr"
+# colnames(nl)[] <- "TCFF"
+# colnames(nl)[] <- "TCFFEr"
+
+setnames(nl,"DI","doi")
+#recode that empty fields are NA
+setnames(nl,"DE","keywords")
+nl[,keywords_orig:=keywords]
+setnames(nl,"AB","abstract")
+nl[,abstract_orig:=abstract]
+setnames(nl,"TI","title")
+nl[,title_orig:=title]
+setnames(nl,"AU","author") # refers to AU
+nl[,author_orig:=author]
+setnames(nl,"VL","volume")
+setnames(nl,"PG","page") # refers to PG
+setnames(nl,"PY","year") 
+
+```
+
+## Incites Data
+```{r, warning=FALSE}
+files <- as.list(list.files("C:/Files/Files/CA/InCite/records", recursive=T))
+recs <- lapply(files,function(x) try(fread(paste0("C:/Files/Files/CA/InCite/records/",x),sep=",")))
+
+# Test Reading Quality
+# length(files)
+# length(recs)
+# di <- lapply(recs,dim)
+# table(unlist(lapply(di,"[[",2)))
+# table(unlist(lapply(di,"[[",1)))
+
+files <- gsub(".csv","",files)
+files <- gsub("^\\w+ \\w+\\/\\w+\\/","",files)
+files <- strsplit(files,split="/")
+
+# Institutional Data
+inst <- lapply(files,function(x) grep("[[:lower:]]",x,value=T))
+
+#shorten institution names
+fun.clean.inst <- function(x) {  x <- toupper(x)
+							x <- gsub(".+\\(","",x,perl=T)
+							x <- gsub("\\).+|\\)$","",x,perl=T)
+							x <- gsub("[[:punct:]]|\\d","",x,perl=T)
+							x <- gsub(paste0(" ",paste(toupper(stopwords()),collapse=" | ")," ")," ",x,perl=T)
+							for (i in 1:10) x <- gsub("  "," ",x,perl=T)
+							paste(substring(unlist(strsplit(x," ")),1,6),collapse="_")
+						}
+# Export List with Institutions and Short Version
+# dt <- data.table(inst_name=unique(unlist(inst)))
+# dt[,inst_shortname:=fun.clean.inst(inst_name),by=inst_name]
+# write.csv(dt,"../../Daten/selection_lists/institutions.csv",row.names=F)
+inst <- lapply(inst ,fun.clean.inst)
+# Add institutions to the record list
+for (i in 1:length(inst)) recs[[i]][,inst:=paste(inst[[i]],collapse=",")]
+
+# Territorial Data
+cou <-  lapply(files,function(x) grep("[[:lower:]]",x,value=T,invert=T))
+fun.clean.cou <- function(x) {  x <- toupper(x)
+							x <- gsub("[[:punct:]]","",x,perl=T)
+							for (i in 1:10) x <- gsub("  "," ",x,perl=T)
+							x <- gsub(" ","_",x,perl=T)
+							x
+						}
+# Export List with Institutions and Short Version
+# dt <- data.table(cou_name=unique(unlist(cou)))
+# dt[,cou_shortname:=fun.clean.cou(cou_name),by=cou_name]
+# write.csv(dt,"../../Daten/selection_lists/countries.csv",row.names=F)
+cou <- lapply(cou ,fun.clean.cou)	
+# Add territories to the record list
+for (i in 1:length(cou)) recs[[i]][,cou:=paste(cou[[i]],collapse=",")]
+
+# Create list with the countries of the respective institutions
+# inst_cou <- files[lapply(inst,nchar) > 0 & lapply(cou,length) > 0]
+# inst_cou <- transpose(as.data.table(inst_cou))
+# setnames(inst_cou,c("cou","inst"))
+# inst_cou[,inst:=fun.clean.inst(inst),by=inst]
+# inst_cou[,cou:=fun.clean.cou(cou),by=cou]
+# write.csv(inst_cou,"../../Daten/selection_lists/countries_institutions.csv",row.names=F)
+
+# Merge and clean records
+recs <- rbindlist(recs)
+
+# Remove ASIA_PACIFIC and EU28
+recs[,cou:=gsub("ASIA_PACIFIC|EU28","",cou)]
+recs[,cou:=gsub(",+",",",cou)]
+recs[,cou:=gsub("^,|,$","",cou)]
+
+# Remove not needed volumns and clean data
+recs <- recs[,names(recs)[c(1,14:21)],with=F]
+setnames(recs,1,"PID")
+recs[,PID:=unlist(lapply(strsplit(PID,split=":"),"[[",2))]
+recs[,(names(recs)):=lapply(.SD,function(x) gsub("n/a",NA,x)),.SDcols=names(recs)]
+setnames(recs,-1,gsub(" ","_",tolower(names(recs)[-1])))
+
+# Remove US states
+remCou <- c(grep("_USA",unique(unlist(cou)),value=T))
+recs[,cou:=gsub(paste(remCou,collapse="|"),"",cou)]
+recs[,cou:=gsub(",+",",",cou)]
+recs[,cou:=gsub(",$","",cou)]
+
+# Merge in one field - cou
+recs[,cou:=paste(cou,collapse=","),by=PID]
+recs[,cou:=gsub(",+",",",cou),by=PID]
+recs[,cou:=gsub("^,+|,+$","",cou),by=PID]
+
+# Merge in one field - inst
+recs[,inst:=paste(inst,collapse=","),by=PID]
+recs[,inst:=gsub(",+",",",inst),by=PID]
+recs[,inst:=gsub("^,+|,+$","",inst),by=PID]
+
+#Remove duplicated entries
+recs <- unique(recs)
+
+# Check and remove duplicates
+# dupl <- function(x) duplicated(x) | duplicated(x, fromLast=T)
+# dims_recs <- list()
+# for (i in 1:dim(recs)[2]) dims_recs[[i]] <- dim(unique(recs[,1:i,with=F]))
+# shows that there are duplicates in the impact factors --> exclude them from data set and fix some time in future
+recs <- recs[,unique(data.table(PID,inst,cou))]
+
+# Combine data with records from WOS
+nl <- merge(nl,recs,by="PID",all.x=T)
+```
+
+# Preprocessing
+## Remove Empty Fields
+```{r recoding}
+cols <- names(nl)
+nl[,(cols):=lapply(.SD,function(x) ifelse(nchar(x) ==0,NA,x)),.SDcols=cols]
+
+## Remove duplicates
+nl <- unique(nl)
+```
+
+
+```{r}
+dupl <- function(x) duplicated(x) | duplicated(x, fromLast=T)
+```
+
+# Article keys
+This section prepares the keys from the articles. First, we clean the needed columns, second we merge them to six different key sets. Finally, we give an overview over the final dataset.
+## Create keys
+```{r article_keys}
+# Clean columns used for keys
+## Doi
+nl[nchar(doi) < 2, doi:=NA]
+nl[,keycol_doi:=gsub("[[:punct:]]","",doi)]
+
+## Author
+nl[,author:=gsub("[^;A-z\\s]","",author,perl=T)]
+nl[,author:=gsub(" +"," ",author,perl=T)]
+nl[,author:=gsub("; ",",",author,perl=T)]
+nl[,author:=gsub(" ","_",author)]
+nl[,keycol_firstauthor:=gsub("^([^,]*),.*","\\1",author)]
+
+## Other key columns
+nl[,keycol_journal:=J9]
+nl[,keycol_year:=year]
+nl[,keycol_page:=paste0("P",gsub("[^[:digit:]]","",BP))]
+nl[,keycol_volume:=paste0("V",gsub("[^[:digit:]]","",volume))]
+
+## Remove punctuation and spaces
+keycols <- c("keycol_firstauthor","keycol_year","keycol_journal","keycol_volume","keycol_page","keycol_doi")
+nl[,(keycols):=lapply(.SD,function(x) gsub("[[:punct:]]| ","",x)),.SDcols=keycols]
+
+# Create keys
+## Define keys
+keys <- list("CR",c("CR",keycols),keycols,keycols[-5],keycols[6],keycols[-6],keycols[-5:-6],keycols[-4:-6])
+
+## Create Key Columns
+keys <- lapply(keys,function(x) gsub("CR|PID-CR","PID",x))
+for (i in keys)  nl[complete.cases(nl[,i,with=F]),(paste0(c("key_",strtrim(gsub("keycol_","",i),1)),collapse="")):=paste0(mget(i),collapse=""),by=PID]
+
+## Calculate statistics on keys
+fun.key_stats <- function(y) {
+				ks <- list(
+					# Has key
+					haskey=y[,lapply(.SD,function(x) length(x[is.na(x)==FALSE])),.SDcols=grep("key_",names(y),value=T)],
+					# Has no key
+					hasnokey=y[,lapply(.SD,function(x) length(x[is.na(x)==TRUE])),.SDcols=grep("key_",names(y),value=T)],
+					# Has key and no duplicated key
+					hasnodupl=y[,lapply(.SD,function(x) unique(data.table(PID,x))[!is.na(x) & unique(data.table(PID,x))[,!dupl(x)],.N]),.SDcols=grep("key_",names(y),value=T)],
+					# Has key but duplicated
+					hasdupl=y[,lapply(.SD,function(x) unique(data.table(PID,x))[!is.na(x) & unique(data.table(PID,x))[,dupl(x)],.N]),.SDcols=grep("key_",names(y),value=T)],
+					# Has key but duplicated without duplicates
+					hasduplunique=y[,lapply(.SD,function(x) length(unique(x[!is.na(x) & dupl(x)==TRUE]))),.SDcols=grep("key_",names(y),value=T)]
+				)
+				ks
+				stats <- t(rbindlist(ks))
+				colnames(stats) <- names(ks)
+				
+				stats <- cbind(stats,
+					  addkeys = c(NA,NA,NA,
+							y[is.na(key_Pfyjvpd) & is.na(key_fyjvpd) & !is.na(key_fyjvp),.N],
+							y[is.na(key_Pfyjvpd) & is.na(key_fyjvpd) & is.na(key_fyjvp) & !is.na(key_fyjv),.N],
+							y[is.na(key_Pfyjvpd) & is.na(key_fyjvpd) & is.na(key_fyjvp) & is.na(key_fyjv) & !is.na(key_fyj),.N],
+							NA
+						)
+					)
+				rbind(stats,
+					consideredKeys = colSums(stats[3:7,])
+				)
+				
+			}
+
+key_stats_nl <- fun.key_stats(nl)		
+```
+
+## Overview articles keys
+The final sample only includes articles that can be matched with a unique key from the cited reference field. 
+The following table gives an overview on the number of non-duplicated, and duplicated articles for each key. 
+`r datatable(key_stats_nl)`
+
+# Cited references keys
+In the following the six relevant columns ar extracted from the cited references field and merged to six different keys.
+
+```{r}
+# Create edgelist with PID and CR with ID for each edges
+el <- nl[nchar(CR)>2,strsplit(CR,split="; "),by=PID][,ELID:=1:.N]
+setnames(el,2,"CR")
+
+# Export list with papers that cite picketty
+write.csv(merge(nl,el[grep("PIKET",CR)],by="PID",all.x=F,all.y=T),"../InequalityEconomics/exported_data/piket_citations.csv")
+
+write.csv(el,"C:/Files/Files/CA/el_full.csv")
+write.csv(nl,"C:/Files/Files/CA/nl_full.csv")
+```
+
+
+## Remove references that do not refer to a journal list in the nodelist
+```{r cited_references_keys}
+# Journal
+## Select anything but komma, proceeded by komma + four digits + komma, followed by komma or end
+el[grep("(.*, |^)(\\d{4}, )([^,]+)",CR),keycol_journal:=gsub("(.*, |^)(\\d{4}, )([^,]+)(,.*|$)","\\3",CR)]
+el[,keycol_journal:=gsub(" |[[:punct:]]|[[:digit:]]","",keycol_journal)] # remove also digits, since some journals are miss coded and include digits
+
+```
+
+Of `r el[,.N]` references, `r el[keycol_journal %chin% nl[,gsub("[[:punct:]]| ","",unique(J9))],.N]` refer to journals listed in the references data set. We remove `r el[!keycol_journal %chin% nl[,gsub("[[:punct:]]| ","",unique(J9))],.N]` references from the sample that refer to other items, such as book, articles in other disciplines or non-peer reviewed articles. 
+
+```{r}
+el <- el[keycol_journal %chin% nl[,gsub("[[:punct:]]| |[[:digit:]]","",unique(J9))]]
+
+```
+
+```{r}
+# Doi
+## Select all entries which have DOI in their cited refereces
+el[grep("DOI",CR),keycol_doi:=CR]
+## Keep only letters after the first DOI
+el[,keycol_doi:=gsub("(.*?)(DOI.+)", "\\2", keycol_doi)]
+## Remove non needed signs
+el[,keycol_doi:=gsub("\\[|\\]|,|DOI ","",keycol_doi)]
+## Replace not needed but splitting signs with space
+el[grep("HTTP",keycol_doi),keycol_doi:=gsub("HTTP:\\/\\/DOI.APA.ORG\\/|HTTP:\\/\\/DX\\.DOI\\.ORG\\/|HTTP:\\/\\/DX.D0L0RG\\/|DOI=|HTTP:\\/\\/DOI.ORG\\/|HTTP:\\/\\/DX.D0I.0RG\\/|HTTP:\\/\\/|HTTP:\\/\\/DOI.ACM.ORG\\/"," ",keycol_doi)]
+## Remove space after "1111/J. " as that leads to problems in the step where short words are removed
+el[,keycol_doi:=gsub("(\\d{4}\\/J\\.) ","\\1",keycol_doi)]
+## Remove double, end and beginning spaces
+el[,keycol_doi:=gsub("^ | $","",keycol_doi)]
+el[,keycol_doi:=gsub(" +"," ",keycol_doi)]
+## Remove duplicated DOIs
+el[grep(" ",keycol_doi),keycol_doi:=paste(unique(unlist(strsplit(keycol_doi,split=" "))),collapse=" "),by=keycol_doi]
+## Remove entries without number
+el <- el[!grepl("[[:digit:]]",keycol_doi),keycol_doi:=NA] 
+## Remove entries without any .
+el <- el[!grepl("\\.",keycol_doi),keycol_doi:=NA] 
+## Remove punctuation
+el[,keycol_doi:=gsub("[[:punct:]]","",keycol_doi)]
+## Remove words shorter than six signs
+for (i in 1:5) el[grep(" ",keycol_doi),keycol_doi:=gsub("(^| )\\w{0,6}($| )"," ",keycol_doi)]
+## Remove words without digits
+for (i in 1:5) el[grep(" ",keycol_doi),keycol_doi:=gsub("(^| )[A-z]*($| )"," ",keycol_doi)]
+## Remove double, end and beginning spaces
+el[,keycol_doi:=gsub("^ | $","",keycol_doi)]
+el[,keycol_doi:=gsub(" +"," ",keycol_doi)]
+## Remove space before TB (entries with a space in URL are lost otherwhise...)
+el[,keycol_doi:=gsub(" TB","TB",keycol_doi)]
+## Remove duplicated dois
+el[grep(" ",keycol_doi),keycol_doi:=paste(unique(unlist(strsplit(keycol_doi,split=" "))),collapse=" "),by=keycol_doi]
+
+# Author
+## Select letters or signs from the beginning until the first komma.
+el[grep("^([[:alpha:]]|[[:punct:]]| )+, ",CR),keycol_firstauthor:=gsub("^(([[:alpha:]]|[[:punct:]]| )+)(, .*)","\\1",CR)] # Volumen Field
+## Remove not needed characters (necessary for replacement)
+el[,keycol_firstauthor:=gsub("[^;A-z\\s]","",keycol_firstauthor,perl=T)]
+el[,keycol_firstauthor:=gsub(" +"," ",keycol_firstauthor,perl=T)]
+el[,keycol_firstauthor:=gsub("^ | $","",keycol_firstauthor,perl=T)]
+# recode authors where second name is full: deprecated, as the articles also use full names
+# el[,keycol_firstauthor:=gsub("( [[:alpha:]])([[:alpha:]]*)","\\1",keycol_firstauthor,perl=T)]
+# el[,keycol_firstauthor:=gsub("( [[:alpha:]]) ","\\1",keycol_firstauthor,perl=T)]
+el[,keycol_firstauthor:=gsub(" ","_",keycol_firstauthor)]
+
+# Year
+## Select four numbers in a row that are preceeded by komma or are in the beginning, and followed by komma or are ini the beginning.
+el[grep("(.*, |^)(\\d{4})(,.*|$)",CR),keycol_year:=gsub("(.*, |^)(\\d{4})(,.*|$)","\\2",CR)] 
+
+# Volume
+## Volume for standard cases (between komma)
+## Select  V between two kommas, and followed by at least one digit and signs other than komma
+el[grep(", V[^(, )]*\\d[^(, )]*(,|$)",CR),keycol_volume:=gsub("(.*, )(V[^(, )]*\\d[^(, )]*)(,.+|$)","\\2",CR)]
+## Volume within doi (between punctuation)
+## Select all which are not part in step two and V between any punctuation followed by at least one digit and non-punctuation. 
+el[!grepl(", V[^(, )]*\\d[^(, )]*(,|$)",CR) &
+     grepl("[[:punct:]]V[^([:punct:] )]*\\d[^([:punct:] )]*[[:punct:]]",CR),keycol_volume:=gsub("(.*[[:punct:]])(V[^([:punct:] )]*\\d[^([:punct:] )]*)([[:punct:]].*)","\\2",CR)]
+
+# Page
+## Select P between two kommas followed by up to ten digits
+el[grep(", P\\d{1,10}(,.*|$)",CR),keycol_page:=gsub("(.*, )(P\\d{1,10})(,.*|$)","\\2",CR)] # 
+
+# Remove punctuation and spaces
+el[,(keycols[-6]):=lapply(.SD,function(x) gsub("[[:punct:]]| ","",x)),.SDcols=keycols[-6]]
+```
+
+
+
+## Remove dois in cited references
+`r el[grep(" ",keycol_doi),.N]` cited references refer to two dois. That would cause an error, hence we remove these duplicates.
+
+```{r}
+# Edgelist with two dois seperated
+elDD <- el[grep(" ",keycol_doi)][,keycol_doi1:=unlist(strsplit(keycol_doi," "))[1],by=ELID][,keycol_toi2:=unlist(strsplit(keycol_doi," "))[2],by=ELID]
+
+# Create Key Columns for each of the two dois
+# t instead of d for short version in key for doi2
+keys <- lapply(keys,function(x) gsub("CR|PID-CR","CR",x))
+keysDD <- lapply(keys[c(3,5)],function(x) gsub("doi","doi1",x))
+keysDD[3:4] <- lapply(keys[c(3,5)],function(x) gsub("doi","toi2",x))
+
+# Make Keys
+for (i in keysDD)  elDD[complete.cases(elDD[,i,with=F]),(paste0(c("key_",strtrim(gsub("keycol_","",i),1)),collapse="")):=paste0(mget(i),collapse=""),by=ELID]
+
+# Count number of matches for full key with each of the Dois
+## key_fyjvpd
+### First Doi
+elDD[,key_fyjvpd_nl:=unlist(lapply(1:elDD[,.N],function(x) nl[nl[,key_fyjvpd] %chin% elDD[x,key_fyjvpd],.N]))]
+### Second Doi
+elDD[,key_fyjvpt_nl:=unlist(lapply(1:elDD[,.N],function(x) nl[nl[,key_fyjvpd] %chin% elDD[x,key_fyjvpt],.N]))]
+## key_d and key_t
+### Doi
+elDD[,key_d_nl:=unlist(lapply(1:elDD[,.N],function(x) nl[nl[,key_d] %chin% elDD[x,key_d],.N]))]
+### Second Doi
+elDD[,key_t_nl:=unlist(lapply(1:elDD[,.N],function(x) nl[nl[,key_d] %chin% elDD[x,key_t],.N]))]
+```
+
+### Remove duplicates identified with key_fyjvpd
+Using the key_fyjvpd key, `r elDD[key_fyjvpt_nl > 0  & key_fyjvpd_nl ==  0 | key_fyjvpt_nl == 0 & key_fyjvpd_nl >  0,.N]` only one doi refers to an article and we remove the other one. 
+
+```{r}
+## Select doi that refers to an article
+elDD[key_fyjvpd_nl == 0 & key_fyjvpt_nl  > 0, keycol_doi:=key_fyjvpt]
+elDD[key_fyjvpd_nl >  0 & key_fyjvpt_nl == 0, keycol_doi:=key_fyjvpd]
+```
+
+### Remove duplicates identified with key_d
+`r elDD[grepl(" ",keycol_doi),.N]` remain with duplicated dois. Using the key_d key, `r elDD[grepl(" ",keycol_doi) & (key_t_nl > 0  & key_d_nl ==  0 |  key_t_nl == 0 & key_d_nl >  0),.N]` only one doi refers to an article and we again remove the other one. 
+
+```{r}
+## Select doi that refers to an article
+elDD[grepl(" ",keycol_doi) & key_d_nl == 0 & key_t_nl  > 0, keycol_doi:=key_t]
+elDD[grepl(" ",keycol_doi) & key_d_nl >  0 & key_t_nl == 0, keycol_doi:=key_d]
+```
+
+`r elDD[grepl(" ",keycol_doi),.N]` articles remain with two dois. In that case both dois are removed and for these items matching will be proceeded without doi.
+
+```{r}
+## Remove dois where no unique doi could be identified
+elDD[grepl(" ",keycol_doi), keycol_doi:=NA]
+
+## Remove key columns and duplicated doi colums
+elDD[,(grep("key_",names(elDD),value=T)):=NULL]
+elDD[,(c("keycol_doi1","keycol_toi2")):=NULL]
+
+## Replace entries with double doi with single doi. 
+el <- rbind(el[grep(" ",keycol_doi,invert=T)],elDD)
+
+## Remove punctuation and space in doi field
+el[,(keycols[6]):=lapply(.SD,function(x) gsub("[[:punct:]]| ","",x)),.SDcols=keycols[6]]
+```
+
+## Create key cols
+```{r}
+# Create Key Columns
+keys <- lapply(keys,function(x) gsub("CR|PID-CR","CR",x))
+for (i in keys) el[complete.cases(el[,i,with=F]),(paste0(c("key_",strtrim(gsub("keycol_","",i),1)),collapse="")):=paste0(mget(i),collapse=""),by=ELID]
+
+# Calculate statistics on keys
+fun.key_stats <- function(y) {
+				ks <- list(
+					# Has key
+					haskey=y[,lapply(.SD,function(x) length(x[!is.na(x)])),.SDcols=grep("key_",names(y),value=T)],
+					# Has no key
+					hasnokey=
+					y[,lapply(.SD,function(x) length(x[is.na(x)])),.SDcols=grep("key_",names(y),value=T)],
+					# Has key and no duplicated key
+					
+					# Number equal keys that refer to two cited references
+					hasnodupl=y[,lapply(.SD,function(x) data.table(CR,x)[!is.na(x) & !x %chin% unique(data.table(CR,x))[dupl(x),x]][,.N]),.SDcols=grep("key_",names(y),value=T)],
+					
+					# Number equal keys that refer to two cited references
+					hasdupl=y[,lapply(.SD,function(x) data.table(CR,x)[!is.na(x) & x %chin% unique(data.table(CR,x))[dupl(x),x]][,.N]),.SDcols=grep("key_",names(y),value=T)],
+					
+					# Has key but duplicated without duplicates
+					hasduplunique=y[,lapply(.SD,function(x) data.table(CR,x)[!is.na(x) & x %chin% unique(data.table(CR,x))[dupl(x),x],length(unique(x))]),.SDcols=grep("key_",names(y),value=T)]
+				)
+				ks
+				stats <- t(rbindlist(ks))
+				colnames(stats) <- names(ks)
+				
+				stats <- cbind(stats,
+					  addkeys = c(NA,NA,NA,
+							y[is.na(key_Pfyjvpd) & is.na(key_fyjvpd) & !is.na(key_d),.N],
+							y[is.na(key_Pfyjvpd) & is.na(key_fyjvpd) & !is.na(key_fyjvp),.N],
+							y[is.na(key_Pfyjvpd) & is.na(key_fyjvpd) & is.na(key_fyjvp) & !is.na(key_fyjv),.N],
+							y[is.na(key_Pfyjvpd) & is.na(key_fyjvpd) & is.na(key_fyjvp) & is.na(key_fyjv) & !is.na(key_fyj),.N]
+						)
+					)
+				rbind(stats,
+					consideredKeys = colSums(stats[3:7,])
+				)
+				
+			}
+
+key_stats_el  <- fun.key_stats(el)
+```
+
+`r datatable(key_stats_el)`
+
+## Complete keys where some keys do not have full information 
+If there is a key_fyjvp and one with key_fyjvpd, and there is only one fitting version of the latter, we complete the former. This follows from the observation that the data is not complete with regard to dois. 
+```{r}
+
+# Replace empty doi columns with doi from columns with same key_fyjvp.
+el[!is.na(key_fyjvp) & dupl(key_fyjvp),keycol_doi:=if (length(unique(keycol_doi[!is.na(keycol_doi)])) == 1){unique(keycol_doi[!is.na(keycol_doi)])}else{keycol_doi},by=key_fyjvp]
+
+# Update keys
+keys <- lapply(keys,function(x) gsub("CR|PID-CR","CR",x))
+## remove keys
+el[,grep("key_",names(el),value=T):=NULL]
+## Recreate Keys
+for (i in keys) el[complete.cases(el[,i,with=F]),(paste0(c("key_",strtrim(gsub("keycol_","",i),1)),collapse="")):=paste0(mget(i),collapse=""),by=ELID]
+
+# Update statistics
+key_stats_el  <- fun.key_stats(el)
+```
+
+## Overview statistics for cited references
+
+The following table gives an overview on the keys generated from the cited references field. 
+
+`r datatable(key_stats_el)`
+
+To make sure that as many keys as possible are used, and congruently references are not matched with the wrong keys, we only use those keys where the key does not refer to more than one cited references fields and reference has not been matched with an article on the basis of a higher level key. In total for `r key_stats_el[1,1]` cited references there are `r sum(key_stats_el[3:7])` keys available of which `r sum(key_stats_el[3:6,4])` are duplicates. 
+
+# Match articles with cited references
+## Identify relevant keys
+We use the highest level key each article and only if an article has not been matched with the highest level key the next best key is selected. 
+We prioritize the key as follows
+
+1. key_fyjvpd
+2. key_fyjvd
+3. key_d
+4. key_fyjvp
+5. key_fyjv
+
+```{r match_articles_remove_duplicates}
+# Code articles and citations by the highest relevant key, and add a key column
+## Identify highest level matched key for each article
+nl[,key_level:=NULL]
+nl[(!is.na(key_fyjvpd) & key_fyjvpd %chin% el[,unique(key_fyjvpd)]),key_level:="key_fyjvpd"] # duplicated key_fyjvpd 
+nl[(is.na(key_level) & !is.na(key_fyjvd) & key_fyjvd %chin% el[,unique(key_fyjvd)]),key_level:="key_fyjvd"] # duplicated key_fyjvd and no key_fyjvpd
+nl[(is.na(key_level) & !is.na(key_d) & key_d %chin% el[,unique(key_d)] ),key_level:="key_d"] # duplicated key_d and no key_fyjvd
+nl[(is.na(key_level)  & !is.na(key_fyjvp) & key_fyjvp %chin% el[,unique(key_fyjvp)] ),key_level:="key_fyjvp"] # duplicated key_fyjvp and no key_fyjvpd 
+nl[(is.na(key_level)  & !is.na(key_fyjv) & key_fyjv %chin% el[,unique(key_fyjv)]),key_level:="key_fyjv"] # duplicated key_fyjv and no key_fyjvp or key_fyjvd
+## Add key to nl
+nl[,key:=NULL]
+nl[key_level == "key_fyjvpd" ,key:=key_fyjvpd]
+nl[key_level == "key_fyjvd",key:=key_fyjvd]
+nl[key_level == "key_d" ,key:=key_d]
+nl[key_level == "key_fyjvp" ,key:=key_fyjvp]
+nl[key_level == "key_fyjv" ,key:=key_fyjv]
+## Add the relevant level to the list with citations
+el[,key_level:=NULL]
+el[key_fyjvpd %chin% nl[key_level == "key_fyjvpd",key_fyjvpd],key_level:= "key_fyjvpd"]
+el[is.na(key_level) & key_fyjvd %chin% nl[key_level == "key_fyjvd",key_fyjvd],key_level:= "key_fyjvd"]
+el[is.na(key_level) & key_d %chin% nl[key_level == "key_d",key_d],key_level:= "key_d"]
+el[is.na(key_level) & key_fyjvp %chin% nl[key_level == "key_fyjvp",key_fyjvp],key_level:= "key_fyjvp"]
+el[is.na(key_level) & key_fyjv %chin% nl[key_level == "key_fyjv",key_fyjv],key_level:= "key_fyjv"]
+## Add the relevant level to the list with citations
+el[,key:=NULL]
+el[key_level == "key_fyjvpd" ,key:=key_fyjvpd]
+el[key_level == "key_fyjvd",key:=key_fyjvd]
+el[key_level == "key_d" ,key:=key_d]
+el[key_level == "key_fyjvp" ,key:=key_fyjvp]
+el[key_level == "key_fyjv" ,key:=key_fyjv]
+
+
+write.csv(el,"C:/Files/Files/CA/el_full_befdupl.csv")
+write.csv(nl,"C:/Files/Files/CA/nl_full_befdupl.csv")
+
+
+
+
+
+```
+
+## Identify duplicated matches
+```{r}
+# Code duplicated keys
+nl[,key_level_dupl:=NULL]
+nl[!is.na(key) & dupl(key),key_level_dupl:=TRUE]
+
+# Overview on Articles and Citations with, without and only duplicates
+cols <- c("Articles","Citations")
+stats <- list()
+## All Entries
+nl <- merge(nl,el[!is.na(key),.(TCm=.N),by=key],by="key",all.x=T)
+stat <- nl[!is.na(key),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="withdups"),by=key_level]
+stats[["withdups"]] <- rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="withdups"),.SDcols=cols])
+## Without Duplicates
+stat <- nl[is.na(key_level_dupl) & !is.na(key),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="withoutdups"),by=key_level]
+stats[["withoutdups"]] <- rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="withoutdups"),.SDcols=cols])
+## Only Duplicates
+stat <- nl[!is.na(key_level_dupl),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="dups"),by=key_level]
+stats[["dups"]] <-  rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="dups"),.SDcols=cols])
+```
+
+The following table gives an overview on the number of articles and citation matched by key and sample (with, without and only duplicates).
+
+`r datatable(rbindlist(stats))`
+
+## Remove duplicated matches
+* First identify and remove manually real duplicates.
+* Second match citation to non-real duplicates with the article that has the highest TC in the WOS field or randomly.
+
+```{r}
+# Identify real duplicates
+dups <- nl[!is.na(key_level_dupl)][,as.data.table(t(combn(PID,m=2,simplify=TRUE))),by=key]
+setnames(dups,c("key","sPID","tPID"))
+## Make list with string distance between duplicates and select those with where the ratio between less than 25% of total characters in the two compared strings have to be changed. 
+dups <- merge(dups,nl[,key_ext:=paste(PID,title,year,TC,DT,sep="_"),by=PID][,data.table(PID,sArt=key_ext,stitle=title)],by.x="sPID",by.y="PID",all.x=T,all.y=F)
+dups <- merge(dups,nl[,key_ext:=paste(PID,title,year,TC,DT,sep="_"),by=PID][,data.table(PID,tArt=key_ext,ttitle=title)],by.x="tPID",by.y="PID",all.x=T,all.y=F)
+dups <- dups[,sd:=stringdist(stitle,ttitle)/(nchar(stitle) + nchar(ttitle))][sd < 0.25]
+## Code manually (in Excel)
+write.csv(dups,file="../../Daten/selection_lists/duplicates_by_keys.csv")
+## Read manually coded real duplicates
+dups <- fread("../../Daten/selection_lists/duplicates_by_keys_man.csv")
+## Remove real duplicated articles
+nl <- nl[!PID %chin% dups[RD==2,tPID]]
+## Remove references of real duplicated articles
+el <- el[!PID %chin% dups[RD==2,tPID]]
+
+# Add additional marker for those with highest TC in WOS or the first in the package (~randomly)
+## Update duplicated keys column
+nl[,key_level_dupl:=NULL]
+nl[!is.na(key) & dupl(key),key_level_dupl:=TRUE]
+## identify key articles with highest TC or randomly for key suffix
+nl[,maxTC:=NULL]
+nl[,key_add:=NULL]
+nl[!is.na(key_level_dupl),maxTC:=PID[TC == max(TC)][1],by=key] 
+## Code keys where suffix is added manually
+nl[!is.na(key_level_dupl) & maxTC == PID,key_add:=TRUE] 
+## add suffix for manual matchin to citation keys (order is important since second line changes key that is needed in first line.)
+el[key %chin% nl[key_add==TRUE,key],key_level:=paste0(key_level,"_ADDX"),by=ELID] 
+el[key %chin% nl[key_add==TRUE,key],key:=paste0(key,"_ADDX"),by=ELID] 
+## Remove keys from articles where suffix is added to other article with the same key
+nl[!is.na(key_level_dupl) & is.na(key_add),key:=NA] 
+nl[!is.na(key_level_dupl) & is.na(key_add),key_level:=NA] 
+## add suffix to selected artcile
+nl[key_add==TRUE,key:=paste0(key,"_ADDX"),by=PID] 
+nl[key_add==TRUE,key_level:=paste0(key_level,"_ADDX"),by=PID] 
+## remove maxTC column
+nl[,maxTC:=NULL]
+
+# Update times cited for each article
+nl[,TCm:=NULL]
+nl <- merge(nl,el[!is.na(key) & key %chin% nl[!is.na(key),key],.N,by=key][,data.table(key,TCm=N)],by="key",all=T)
+
+# Overview on Articles and Citations with, without and only duplicates
+cols <- c("Articles","Citations")
+stats <- list()
+## All Entries
+stat <- nl[!is.na(key),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="withdups"),by=key_level]
+stats[["withdups"]] <- rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="withdups"),.SDcols=cols])
+## Without Duplicates
+stat <- nl[is.na(key_level_dupl) & !is.na(key),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="withoutdups"),by=key_level]
+stats[["withoutdups"]] <- rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="withoutdups"),.SDcols=cols])
+## Only Duplicates
+stat <- nl[!is.na(key_level_dupl),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="dups"),by=key_level]
+stats[["dups"]] <-  rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="dups"),.SDcols=cols])
+```
+
+The following table gives an overview on the number of articles and citations matched by key and with, without and only duplicates, after removing duplicated matches. key_level NA refers to those articles which did not receive a key when randomly assigned.
+`r datatable(rbindlist(stats))`
+```{r}
+# Merge Edgelist
+el <- merge(el[!is.na(key),data.table(sPID = PID,key,key_level,ELID)],nl[!is.na(key),data.table(tPID = PID,key,key_level)],by=c("key","key_level"),all=F)
+
+```
+
+## Duplicated Citations
+`r el[dupl(paste0(sPID,tPID)),.N]` citations are duplicated. Firstly, because the CR reference field of Web of Science has wrong entries. Secondly, several articles from one volume are cited and matched with a lower level key. Due to the method outlined above, all these citations are linked to one article. To avoid mismatches we remove duplicated citations. 
+```{r}
+# Remove duplicates
+el <- unique(el)
+```
+
+## Citations to future articles
+In this section we remove edges where the cited paper has been published two years after the citing paper.
+```{r}
+# Add article and reference year
+el <- merge(el,nl[,PID,year],by.x="sPID",by.y="PID")
+el <- merge(el,nl[,PID,year],by.x="tPID",by.y="PID",suffixes=c(".source",".target")) 
+```
+
+In `r el[year.source <= (year.target - 2),.N]` citations refer to articles published at least two years after the source article has been published. We remove those citations. 
+```{r}
+el <- el[year.source > (year.target - 2)]
+# Remove article and reference year
+el[,(c("year.source","year.target")):=NULL]
+```
+
+## Finalise Article and Citation Dataset before post-processing
+```{r}
+# Times Cited 
+nl[,TCm:=NULL]
+nl <- merge(nl,el[,.N,by=tPID][,data.table(PID=tPID,TCm=N)],by="PID",all=T)
+
+# Number of references
+nl[,NRm:=NULL]
+nl <- merge(nl,el[,.N,by=sPID][,data.table(PID=sPID,NRm=N)],by="PID",all=T)
+
+# Update duplicated keys column
+nl[,key_level_dupl:=NULL]
+nl[!is.na(key) & dupl(key),key_level_dupl:=TRUE]
+
+# Overview on Articles and Citations with, without and only duplicates
+cols <- c("Articles","Citations")
+stats <- list()
+## All Entries
+stat <- nl[!is.na(key),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="withdups"),by=key_level]
+stats[["withdups"]] <- rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="withdups"),.SDcols=cols])
+## Without Duplicates
+stat <- nl[is.na(key_level_dupl) & !is.na(key),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="withoutdups"),by=key_level]
+stats[["withoutdups"]] <- rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="withoutdups"),.SDcols=cols])
+## Only Duplicates
+stat <- nl[!is.na(key_level_dupl),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="dups"),by=key_level]
+stats[["dups"]] <-  rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="dups"),.SDcols=cols])
+```
+
+The following table gives an overview on the data set before post-processing journals, authors and keywords
+`r datatable(rbindlist(stats))`
+
+## Export Articles and Citations before Postprocessing
+
+```{r}
+# Export Citations
+write.csv(el,"C:/Files/Files/CA/el_beforePP.csv",row.names=F)
+# Export Articles
+write.csv(nl,"C:/Files/Files/CA/nl_beforePP.csv",row.names=F)
+
+```
+
+
+
+# Prepare data for the concentration article 
+```{r}
+# nl <- fread("C:/Users/ernes/Documents/CA/nl_beforePP.csv")
+nl <- fread("C:/Files/Files/CA/nl_beforePP.csv")
+# el <- fread("C:/Users/ernes/Documents/CA/el_beforePP.csv")
+el <- fread("C:/Files/Files/CA/el_beforePP.csv")
+nl <- nl[year <=2016 & grepl("ECON",WC)]
+el <- el[sPID %chin% nl[,PID] & tPID %chin% nl[,PID]]
+```
+
+
+## Journal Recoding & Journals removing
+The original dataset has {r nl[,.N,journal][,.N]} listed journals and {r nl[,.N,J9][,.N]} listed journal abrrivations ({r nl[grepl("ECON",WC) & year <=2016,.N,journal][,.N])} and {r nl[grepl("ECON",WC) & year <=2016,.N,J9][,.N]} in research area economics and published before 2016).
+
+Some journals have been discuntinued in Web of Science. E.g. 'The Journal of Developing Areas' is only listed until 1999. In a first step we manuelly check for changes in the name of journals. Herto we also use the information listed in the field for journal abbrivations.  
+
+```{r}
+# Recode miscoded J9 or journal entries
+## stat
+data.table(J9_J=nl[,.N,.(J9,journal)][,.N], J9_J_9=nl[,J9,journal][,unique(.SD)][,.N,by=journal][,.N], J9_J_J9=nl[,J9,by=journal][,unique(.SD)][,.N,by=J9][,.N])
+data.table(J=nl[,.N,journal][,.N],j2016=nl[year ==2016,.N,journal][,.N],j2014=nl[year ==2014,.N,journal][,.N])
+
+## recode
+nl[,J9_orig:=J9][,journal_orig:=journal]
+## fix where one J9 refers to different journals or other way round OR n J9 refer to n journal (checked plausability manually and no mistakes found:
+recode <- nl[,.N,.(J9,journal)][,J9n:=.N,by=J9][,journaln:=.N,by=journal][,.SD][J9n != 1 | journaln != 1][,J9_new:=J9[max(J9n) == J9n][1],by=journal][,journal_new:=journal[(max(journaln) == journaln)][1],by=J9][,.SD]
+recJ9 <- recode[,unique(data.table(J9,J9_new))]
+for (i in 1:recJ9[,.N]) nl[J9 == recJ9[i,J9],J9:=recJ9[i,J9_new]]
+recjournal <- recode[,unique(data.table(journal,journal_new))]
+for (i in 1:recjournal[,.N]) nl[journal == recjournal[i,journal],journal:=recjournal[i,journal_new]]
+## stat
+data.table(J9_J=nl[,.N,.(J9,journal)][,.N], J9_J_9=nl[,J9,journal][,unique(.SD)][,.N,by=journal][,.N], J9_J_J9=nl[,J9,by=journal][,unique(.SD)][,.N,by=J9][,.N])
+data.table(J=nl[,.N,journal][,.N],j2016=nl[year ==2016,.N,journal][,.N],j2014=nl[year ==2014,.N,journal][,.N])
+
+## Fill empty SN with SN when abailable for other entry
+nl[J9 %chin% nl[is.na(SN),unique(J9)],SN:=SN[!is.na(SN)][1],by=J9]
+## Create table with more than 1 SN refers to a J9
+SN2_J9 <- nl[!is.na(SN),SN,by=J9][,unique(.SD)][,.N,by=J9][N>1]
+## Create table with more than 1 J9 refers to a SN
+SN2_SN <- nl[!is.na(SN),SN,by=J9][J9 %chin% SN2_J9$J9][,unique(.SD)][order(-SN)]
+## Create table where more than 1 J9 or SN refers to one or more J9 or SN.
+## Selects from two serial numbers that refer to the same J9, those which also refers to two J9, creates a recoding table. 
+SN2_SN_J9 <- nl[!is.na(SN),SN,by=J9][,unique(.SD)][J9 %chin% SN2_SN$J9 | SN %chin% SN2_SN$SN][order(-SN)][,SN2_n:=.N,by=SN][,.SD][,SN2:=ifelse(length(SN) != 1,SN[SN2_n == 2],SN[1]),by=J9][,SN2:=ifelse(is.na(SN2),SN[1],SN2),by=J9][,SN:=SN2][,c("SN2_n","SN2"):=NULL][,unique(.SD)]
+## Recode SN that only one SN 
+for (i in SN2_SN_J9[,J9]) nl[J9 == i,SN:=SN2_SN_J9[J9 == i,SN]]
+## Selects from two J9/journal that refer to one SN the one with the higher year and replaces the older J9/journal
+nl[!is.na(SN),journal:=journal[max(year) == year][1],by=SN]
+nl[!is.na(SN),J9:=J9[max(year) == year][1],by=SN]
+
+nl[,.N,.(year,journal_orig)][,.SD[journal_orig %chin% .SD[N>500,c("ECONOMIST NETHERLANDS",unique(journal_orig))]]][,ggplot(.SD,aes(y=N,x=year,color=journal_orig))+geom_line() + guides(color=guide_legend(nrow=4,byrow=TRUE))]
+nl[,.N,.(year,journal_orig)][,.SD[journal_orig %chin% .SD[N>500,c("ECONOMIST NETHERLANDS",unique(journal_orig))]]][order(-N)][,datatable(.SD)]
+
+# Remove Economist before 1965 and "value in health for high number of articles per year
+## Economist
+nl[year <=1965 & journal_orig == "ECONOMIST"][,.N,.(journal_orig,year)][,datatable(.SD)]
+data.table(arts=nl[PID %chin% nl[year <=1965 & journal_orig == "ECONOMIST",PID],.N],citations=el[tPID %chin% nl[PID %chin% nl[year <=1965 & journal_orig == "ECONOMIST",PID],PID],.N],references=el[sPID %chin% nl[PID %chin% nl[year <=1965 & journal_orig == "ECONOMIST",PID],PID],.N])
+nl <- nl[!PID %chin% nl[year <=1965 & journal_orig == "ECONOMIST",PID]]
+## Value in health
+data.table(arts=nl[journal == "VALUE IN HEALTH",.N],citations=el[tPID %chin% nl[journal == "VALUE IN HEALTH",PID],.N],references=el[sPID %chin% nl[journal == "VALUE IN HEALTH",PID],.N])
+nl <- nl[journal != "VALUE IN HEALTH"]
+
+# Manuel Checking
+## export list with journal & j9 for manuel correction
+write.csv(nl[,.N,by=c("J9","journal","year")][,first_year:=min(year),by=journal][,last_year:=max(year),by=journal][,J9n:=.N,by=J9][,journaln:=.N,by=journal][,N:=sum(N),by=journal][order(J9)][,-"year"][,unique(.SD)],
+		"../../Daten/selection_lists/journal/recode.csv",row.names=F)
+## Import manually recoded journals
+recode <- as.data.table(read_xlsx("../../Daten/selection_lists/journal/recode_man3.xlsx"))[,merge_j:=ifelse(nchar(merge_j)==0,NA,merge_j)][!is.na(merge_j)]
+## Recode journals where the names have been changed. 
+recode <- recode[!merge_j=="remove"]
+recode[,journal_new:=journal][!is.na(merge_j),journal_new:=journal[last_year == max(last_year)][1],by=merge_j][!is.na(merge_j),J9_new:=J9[last_year == max(last_year)][1],by=merge_j]
+recode <- recode[,data.table(journal,journal_new,J9,J9_new)][,unique(.SD)]
+## add "JOURNAL OF ECONOMICS ZEITSCHRIFT FUR NATIONALOKONOMIE"
+recode <- rbind(recode,data.table(journal="JOURNAL OF ECONOMICS ZEITSCHRIFT FUR NATIONALOKONOMIE", journal_new="JOURNAL OF ECONOMICS", J9="J ECON", J9_new="J ECON"))
+## Recode
+nl <- merge(nl,recode[,journal,journal_new][,unique(.SD)],by="journal",all.x=T)[,journal:=ifelse(is.na(journal_new),journal,journal_new)]
+nl <- merge(nl,recode[,J9,J9_new][,unique(.SD)],by="J9",all.x=T)[,J9:=ifelse(is.na(J9_new),J9,J9_new)]
+## stat
+data.table(J=nl[,.N,journal][,.N],j2016=nl[year ==2016,.N,journal][,.N],j2014=nl[year ==2014,.N,journal][,.N])
+
+
+## Make list with journals that have been available for less then four years. 
+journal_keep <- nl[,data.table(first_year=min(year),last_year=max(year),dur=max(year)-min(year)+1),by=journal][order(dur)]
+
+jour <- nl[,.N,.(year,journal)][,.(year=paste0(year,collapse=","),arts=sum(N),years=.N),.(journal)]
+jour <- merge(journal_keep,jour,by="journal",all=T)
+jourel <- merge(el,nl,by.x="tPID",by.y="PID")[,.(cits=.N),journal]
+jour <- merge(jour,jourel,by="journal",all=T)
+jourel <- merge(el,nl,by.x="sPID",by.y="PID")[,.(refs=.N),journal]
+jour <- merge(jour,jourel,by="journal",all=T)
+jour[,cits:=ifelse(is.na(cits),0,cits)][,refs:=ifelse(is.na(refs),0,refs)]
+jour[,keep:=ifelse(arts<10 | refs <100 | years/dur<1/4 | years <2,F,T)]
+datatable(merge(jour,nl[,henho,journal][,unique(.SD)],by="journal",all.x=T,all.y=F))
+
+data.table(J=nl[,.N,journal][,.N],j2016=nl[year ==2016,.N,journal][,.N],j2014=nl[year ==2014,.N,journal][,.N])
+
+```
+
+## Remove journals that have been available less than four years. 
+In total we remove `r jour[keep==F,.N]` of `r jour[,.N]`, `r nl[,.N] - nl[journal %chin% jour[keep==T,journal],.N]` articles and `r el[sPID %chin% nl[,PID] & tPID %chin% nl[,PID],.N] - el[sPID %chin% nl[journal %chin% jour[keep==T,journal],PID] & tPID %chin% nl[journal %chin% jour[keep==T,journal],PID],.N]` citations. The removed journals are in total only `r el[sPID %chin% nl[,PID] & tPID %chin% nl[journal %chin% jour[keep==F,journal],PID],.N]` cited. 
+```{r}
+# stats
+data.table(J9_J=nl[,.N,.(J9,journal)][,.N], J9_J_9=nl[,J9,journal][,unique(.SD)][,.N,by=journal][,.N], J9_J_J9=nl[,J9,by=journal][,unique(.SD)][,.N,by=J9][,.N])
+data.table(J=nl[,.N,journal][,.N],j2016=nl[year ==2016,.N,journal][,.N],j2014=nl[year ==2014,.N,journal][,.N])
+data.table(arts=nl[,.N],remarts=nl[,.N] - nl[journal %chin% jour[keep==T,journal],.N],cits=el[,.N])
+
+data.table(jou_keep=nl[journal %chin% jour[keep==T,journal]][,.N,journal][,.N],jour_keep2014=nl[journal %chin% jour[keep==T,journal]][year==2014,.N,journal][,.N],jour_keep2016=nl[journal %chin% jour[keep==T,journal]][year==2016,.N,journal][,.N])
+data.table(
+	## Citations of removed journals
+	cit_rem=el[sPID %chin% nl[,PID] & tPID %chin% nl[,PID],.N] - el[sPID %chin% nl[journal %chin% jour[keep==T,journal],PID] & tPID %chin% nl[journal %chin% jour[keep==T,journal],PID],.N],
+	## Citations to removed journals
+	cit_remJ=el[sPID %chin% nl[,PID] & tPID %chin% nl[journal %chin% jour[keep==F,journal],PID],.N],
+	## References from removed journals
+	ref_remJ=el[sPID %chin% nl[journal %chin% jour[keep==F,journal],PID] & tPID %chin% nl[,PID],.N]
+)
+      
+
+## Remove articles from dataset
+nl <- nl[journal %chin% jour[keep==T,journal]]
+el <- el[sPID %chin% nl[,PID] & tPID %chin% nl[,PID]]
+
+# stats
+data.table(J9_J=nl[,.N,.(J9,journal)][,.N], J9_J_9=nl[,J9,journal][,unique(.SD)][,.N,by=journal][,.N], J9_J_J9=nl[,J9,by=journal][,unique(.SD)][,.N,by=J9][,.N])
+data.table(J=nl[,.N,journal][,.N],j2016=nl[year ==2016,.N,journal][,.N],j2014=nl[year ==2014,.N,journal][,.N])
+data.table(arts=nl[,.N],remarts=nl[,.N] - nl[journal %chin% jour[keep==T,journal],.N],cits=el[,.N])
+
+data.table(jou_kee=nl[journal %chin% jour[keep==T,journal]][,.N,journal][,.N],jour_keep2014=nl[journal %chin% jour[keep==T,journal]][year==2014,.N,journal][,.N],jour_keep2016=nl[journal %chin% jour[keep==T,journal]][year==2016,.N,journal][,.N])
+data.table(
+	## Citations of removed journals
+	cit_rem=el[sPID %chin% nl[,PID] & tPID %chin% nl[,PID],.N] - el[sPID %chin% nl[journal %chin% jour[keep==T,journal],PID] & tPID %chin% nl[journal %chin% jour[keep==T,journal],PID],.N],
+	## Citations to removed journals
+	cit_remJ=el[sPID %chin% nl[,PID] & tPID %chin% nl[journal %chin% jour[keep==F,journal],PID],.N],
+	## References from removed journals
+	ref_remJ=el[sPID %chin% nl[journal %chin% jour[keep==F,journal],PID] & tPID %chin% nl[,PID],.N]
+)
+   
+```
+
+
+
+## Remove not needed document types
+
+We keep items of the following item type
+
+`r unlist(fread("../../Daten/selection_lists/document_type_keep.csv",header=F)[,V1])`
+
+Further we remove articles with less than 10 citations of the following item type:
+
+`r unlist(fread("../../Daten/selection_lists/document_type_thres.csv",header=T)[,x])`
+
+
+
+```{r}
+# stat
+data.table(J=nl[,.N,journal][,.N],j2016=nl[year ==2016,.N,journal][,.N],j2014=nl[year ==2014,.N,journal][,.N])
+data.table(arts=nl[,.N],cits=el[,.N])
+
+# Read types
+DT_k <- fread("../../Daten/selection_lists/document_type_keep.csv",header=F)[,V1]
+DT_thr <- fread("../../Daten/selection_lists/document_type_thres.csv",header=T)[,x]
+## Cote articles to remove
+nl[,remDT:=ifelse(DT %chin% DT_k,"keep","remove")]
+nl[,remDT:=ifelse(PID %chin% el[,.N,tPID][N>9][tPID %chin% nl[DT %chin% DT_thr,PID]][,tPID],"keep",remDT)]
+
+# Create overview table
+xt <- merge(nl[,.(Frequency=.N),DT],merge(el,nl[,DT,PID],by.x="tPID",by.y="PID")[,.(Citations=.N),DT],by="DT",all=T)[,Citations:=ifelse(is.na(Citations),0,Citations)][,`Citations per item`:=Citations/Frequency]
+zero_cit <- nl[!PID %chin% el[,tPID]][,.(`Items with 0 citations`=.N),DT]
+xt <- merge(xt,zero_cit,by="DT",all=T)[,`Items with 0 citations`:=ifelse(is.na(`Items with 0 citations`),0,`Items with 0 citations`)]
+removed_arts <- nl[remDT=="remove",.(`Removed items`=.N),DT]
+xt <- merge(xt,removed_arts,by="DT",all=T)[,`Removed items`:=ifelse(is.na(`Removed items`),0,`Removed items`)]
+removed_cit <- merge(nl[remDT=="remove",PID,DT],el,by.x="PID",by.y="tPID")[,.(`Removed citations`=.N),DT]
+xt <- merge(xt,removed_cit,by="DT",all=T)[,`Removed citations`:=ifelse(is.na(`Removed citations`),0,`Removed citations`)]
+xt[,gr:=ifelse(DT %chin% DT_k,1,NA)][,gr:=ifelse(DT %chin% DT_thr,2,gr)][,gr:=ifelse(is.na(gr),3,gr)]
+setorder(xt,gr,-Frequency)
+xt[,gr:=NULL]
+fltoupper <- function(x) gsub("(^|[[:space:]]|,|;)([[:alpha:]])", "\\1\\U\\2", tolower(x), perl=TRUE)
+xt[,DT:=fltoupper(DT)]
+
+xt <- rbind(xt,xt[,-1][,lapply(.SD,sum)][,DT:="All items"][,.SD][,`Citations per item`:=xt[,mean(`Citations per item`)]],fill=T)
+setnames(xt,"DT","Research Item")
+## Export table to word with overview on removed items. 
+doc <- docx(title = "tables_report", list.definition = getOption("ReporteRs-list-definition"))
+doc <- addParagraph( doc,c("","",""));doc <- addFlexTable(doc, FlexTable( data = xt,add.rownames=T))
+writeDoc(doc, file = paste0("../../../WU Intern/Research/Report_WP1/export_word/removed_items_2016EC.docx"))
+
+## Settings
+dig <- matrix(c(rep(0,4*dim(xt)[1]),rep(2,dim(xt)[1]),rep(0,3*dim(xt)[1])),ncol=8)
+alg <- c("L{5cm}","R{1.3cm}","R{1.3cm}","R{1.3cm}","R{1.3cm}","R{1.3cm}","R{1.3cm}")
+cap <- "Overview on research items"
+lab <- c("table:res_item")
+## for formatting (will be removed later again)
+xt[,`Research Item`:=ifelse(`Research Item` %chin% fltoupper(DT_k),paste0("1_inkl_",`Research Item`),`Research Item`)][,`Research Item`:=ifelse(`Research Item` %chin% fltoupper(DT_thr),paste0("2_thres_",`Research Item`),`Research Item`)]
+bold.somerows <- function(x) {x <- gsub('1_inkl_(.*)',paste('\\\\textbf{\\1','}'),x); x <- gsub('2_thres_(.*)',paste('\\\\textit{\\1','}'),x) }
+## Print
+xt <- xtable(xt,caption=cap,align=c("r",alg),label=lab,digits=dig) #
+print(xt,type="latex",hline.after=c(-1,-1,0,10,16,26,27,27),table.placement="!htbp",
+        file="../EconConcentration/export_latex/annex_research_items.tex", size="\\scriptsize", sanitize.text.function = bold.somerows,
+		include.rownames=F,format.args=list(big.mark = ","))
+
+## total
+data.table(arts=nl[remDT=="remove",.N],ref=el[sPID %chin% nl[remDT=="remove",PID],.N],cits=el[tPID %chin% nl[remDT=="remove",PID],.N])
+## remove total
+data.table(remarts=nl[remDT=="remove",.N],remref=el[sPID %chin% nl[remDT=="remove",PID],.N],remcits=el[tPID %chin% nl[remDT=="remove",PID],.N])
+data.table(keeparts=nl[remDT=="keep",.N],keepref=el[sPID %chin% nl[remDT=="keep",PID],.N],keepcits=el[tPID %chin% nl[remDT=="keep",PID],.N])
+## remove because of threshold
+data.table(arts=nl[DT %chin% DT_thr,.N],refs=el[sPID %chin% nl[DT %chin% DT_thr,PID],.N],cits=el[tPID %chin% nl[DT %chin% DT_thr,PID],.N])
+data.table(remarts=nl[remDT=="remove"  & DT %chin% DT_thr,.N],remref=el[sPID %chin% nl[remDT=="remove"  & DT %chin% DT_thr,PID],.N],remcits=el[tPID %chin% nl[remDT=="remove"  & DT %chin% DT_thr,PID],.N])
+data.table(keeparts=nl[remDT=="keep"  & DT %chin% DT_thr,.N],keepref=el[sPID %chin% nl[remDT=="keep"  & DT %chin% DT_thr,PID],.N],keepcits=el[tPID %chin% nl[remDT=="keep"  & DT %chin% DT_thr,PID],.N])
+## remove category
+data.table(arts=nl[!DT %chin% DT_thr,.N],ref=el[sPID %chin% nl[!DT %chin% DT_thr,PID],.N],cits=el[tPID %chin% nl[!DT %chin% c(DT_thr,DT_k),PID],.N])
+data.table(remarts=nl[remDT=="remove"  & !DT %chin% DT_thr,.N],remref=el[sPID %chin% nl[remDT=="remove"  & !DT %chin% c(DT_thr,DT_k),PID],.N],remcits=el[tPID %chin% nl[remDT=="remove"  & !DT %chin% DT_thr,PID],.N])
+data.table(keeparts=nl[remDT=="keep"  & !DT %chin% DT_thr,.N],keepref=el[sPID %chin% nl[remDT=="keep"  & !DT %chin% c(DT_thr,DT_k),PID],.N],keepcits=el[tPID %chin% nl[remDT=="keep"  & !DT %chin% DT_thr,PID],.N])
+
+
+datatable(xt)
+
+## Remove references of not used document type
+nl <- nl[remDT=="keep"][,remDT:=NULL]
+el <- el[sPID %chin% nl[,PID] & tPID %chin% nl[,PID]]
+
+#stat
+data.table(J=nl[,.N,journal][,.N],j2016=nl[year ==2016,.N,journal][,.N],j2014=nl[year ==2014,.N,journal][,.N])
+
+## Top 20 items within the threshold subset of document types
+datatable(merge(el,nl[DT %chin% DT_thr][,.(PID,author,title,DT)],by.x="tPID",by.y="PID")[,.N,.(author,title,DT)][order(-N)][1:20])
+```
+
+
+## Author Recoding
+```{r}
+
+# Replace authors according to recoding list
+fun.clean.auth <- function(x) gsub("[^_,A-z]","",gsub("; ",",",gsub(", ","_",x)))
+nl[,author:=fun.clean.auth(author_orig)]
+
+## Read dictionary with recoded authors
+au <- fread("../../Daten/selection_lists/author_recoding.csv")[!is.na(merge),c(4,5)]
+## CreateReplacement column
+au[,author_repl:=author[1],by=merge]
+au <- au[author != author_repl]
+## Create data frame with PID and author
+aut <- nl[,strsplit(author,","),by=PID][,auth_position:=1:.N,by=c("PID")][,data.table(PID,author=V1,auth_position)]
+## Merge with recode data and melt
+aut <- merge(aut[!is.na(author) & author != "[ANONYMOUS]"],au,by="author",all.x=T)[,author:=ifelse(is.na(author_repl),author,author_repl)][order(auth_position),paste0(author,collapse=","),by=PID][,data.table(PID,author_new=V1)]
+## merge with nl list
+nl <- merge(nl,aut,by="PID",all.x=T)[,author:=ifelse(is.na(author_new),author,author_new)][,author_new:=NULL]
+```
+
+## Region and institutions recoding
+```{r}
+# Incites
+nl[,cou_incites:=cou][,inst_incites:=inst][,cou:=NULL][,inst:=NULL]
+
+
+# Adapt Incites Inst and C1 / RPAF
+inst_inc <- nl[,strsplit(inst_incites,","),PID]
+## remove non-unis
+non_uni <- c("UNIVER_LONDON","CENTRE_ECONOM_POLICY_RESEAR_UK","instoth","ASIA_PACIFI","UNIVER_COLLEG_LONDON")
+inst_inc <- inst_inc[!V1 %chin% non_uni]
+## Recode institutions
+inst_inc_C1_rec <- fread("../../Daten/selection_lists/inst_adapt_C1_Incites_man.csv")[recode==1 & inst_inc != inst_recode][,.(inst_inc,inst_recode)][,unique(.SD)]
+### Merge Manually recoded
+pasteNA <- function(x) paste(x[!is.na(x)],collapse=",")
+inst_inc <- merge(inst_inc,inst_inc_C1_rec,by.x="V1",by.y="inst_inc",all.x=T)[,inst:=ifelse(is.na(inst_recode),V1,inst_recode)][,pasteNA(inst),PID][,.(PID,inst_incites=ifelse(nchar(V1)<1,NA,V1))]
+nl <- merge(nl[,inst_incites:=NULL],inst_inc,by="PID",all.x=T)
+
+
+# Adapt Incites Cou and C1 / RPAF and add Region to incites
+cou_inc <- nl[,strsplit(cou_incites,","),PID]
+cou_repl <- data.table(cou_inc=c("ABB","BP","CENT_AFR_REPUBL","CHINA_MAINLAND","CONGO_PEOPLES_REP","EON","FRENCH_GUIANA","GERMANY_FED_REP_GER","GERMANY_GER_DEM_REP","MACAU","MAURITANIA","SAMOA","SAP"), cou_recode=c(NA,NA,"CENT_AFR_REPUBL","CHINA","CONGO_DEMOCRATIC_REPUBLIC",NA,NA,"GERMANY","GERMANY",NA,"MAURITIUS",NA,NA))
+cou_inc <- merge(cou_inc,cou_repl,by.x="V1",by.y="cou_inc",all.x=T)[,cou:=ifelse(is.na(cou_recode),V1,cou_recode)][,(c("V1","cou_recode")):=NULL]
+cou_inc <- merge(cou_inc,fread("../../Daten/selection_lists/country_region_conc.csv"),by.x="cou",by.y="cou",all.x=T)
+cou_inc <- cou_inc[,lapply(.SD,pasteNA),by="PID",.SDcols=c("cou","reg")][,.SD][,.(PID,cou_incites=ifelse(nchar(cou)<1,NA,cou),reg_incites=ifelse(nchar(reg)<1,NA,reg))]
+nl <- merge(nl[,cou_incites:=NULL][,reg_incites:=NULL],cou_inc,by="PID",all.x=T)
+```
+
+
+## Finalise Article and Citation Dataset
+```{r}
+# Times Cited 
+nl[,TCm:=NULL]
+nl <- merge(nl,el[,.N,by=tPID][,data.table(PID=tPID,TCm=N)],by="PID",all=T)
+
+# Number of references
+nl[,NRm:=NULL]
+nl <- merge(nl,el[,.N,by=sPID][,data.table(PID=sPID,NRm=N)],by="PID",all=T)
+
+# Update duplicated keys column
+nl[,key_level_dupl:=NULL]
+nl[!is.na(key) & dupl(key),key_level_dupl:=TRUE]
+
+# Overview on Articles and Citations with, without and only duplicates
+cols <- c("Articles","Citations")
+stats <- list()
+## All Entries
+stat <- nl[!is.na(key),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="withdups"),by=key_level]
+stats[["withdups"]] <- rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="withdups"),.SDcols=cols])
+## Without Duplicates
+stat <- nl[is.na(key_level_dupl) & !is.na(key),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="withoutdups"),by=key_level]
+stats[["withoutdups"]] <- rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="withoutdups"),.SDcols=cols])
+## Only Duplicates
+stat <- nl[!is.na(key_level_dupl),data.table(Articles=.N,Citations=sum(TCm,na.rm=T),sample="dups"),by=key_level]
+stats[["dups"]] <-  rbind(stat,stat[,c(key_level="total",lapply(.SD,sum),sample="dups"),.SDcols=cols])
+```
+
+The following table gives an overview on the final dataset.
+`r datatable(rbindlist(stats))`
+```{r}
+# Export Local
+# Export Citations
+# write.csv(el,"C:/Users/ernes/Documents/CA/el_SJ_afterPP_ECON2016.csv",row.names=F)
+write.csv(el,"C:/Files/Files/CA/el_SJ_afterPP_ECON2016.csv",row.names=F)
+# Export Articles
+# write.csv(nl,"C:/Users/ernes/Documents/CA/nl_SJ_afterPP_ECON2016.csv",row.names=F)
+write.csv(nl,"C:/Files/Files/CA/nl_SJ_afterPP_ECON2016.csv",row.names=F)
+
+# Export to Dropbox
+## Export Citations
+# write.csv(el[,data.table(source=sPID,target=tPID,ELID)],"C:/Files/Files/CA/el_ECON2016.csv",row.names=F)
+## Export Articles
+# cols <- c("PID","author","year","journal","doi","title","keywords","keywordsEd","jel","abstract","region","cou","inst","henho","hencat","volume","TC","NR","DT","WC","TCm")
+# write.csv(nl[,cols,with=F],"../../Daten/nl.csv",row.names=F)
+```
+
+## Reload data and select used columns
+```{r, load_data}
+# Load Data
+# el <- fread("../../Daten/el.csv",verbose=F)
+# el <- fread("C:/Files/Files/CA/el.csv",verbose=F)
+el <- fread("C:/Files/Files/CA/el_SJ_afterPP_ECON2016.csv",verbose=F)[,.(source=sPID,target=tPID,ELID)]
+# nl <- fread("../../Daten/nl.csv",verbose=F)
+# nl <- fread("C:/Files/Files/CA/nl.csv",verbose=F)
+
+names_old <- c("PID", "author", "year", "journal", "doi", "title", "region", "cou", "inst", "henho", 
+"hencat", "volume", "TC", "NR", "DT", "WC", "TCm")
+nl <- fread("C:/Files/Files/CA/nl_SJ_afterPP_ECON2016.csv",verbose=F)
+setnames(nl,"cou_incites","cou")
+setnames(nl,"inst_incites","inst")
+setnames(nl,"reg_incites","region")
+nl <- nl[,names_old,with=F]
+
+nl[,henho:=ifelse(henho==1,"het","ort")]
+nl <- nl[grepl("ECONOMICS",WC) & year <=2016]
+el <- el[source %chin% nl[,PID] & target %chin% nl[,PID]]
+```
+
+
+## Create subsamples
+```{r}
+# Subsamples
+NLs <- list()
+NLs[["ECON_2016"]] <- nl[journal %chin% nl[year == 2016,unique(journal)] & grepl("ECONOMICS",WC)]
+
+
+NLs[["ECON"]] <- nl[grepl("ECONOMICS",WC) & year <=2016]
+NLs[["ECON_1980"]] <- nl[grepl("ECONOMICS",WC) & year >= 1980 & year <= 2014]
+# Subsamples of Edgelists
+ELs <- list()
+ELs[["ECON_2016"]] <-  el[target %chin% NLs[["ECON_2016"]][,PID] & source %chin% NLs[["ECON_2016"]][,PID]]
+ELs[["ECON"]] <- el[target %chin% NLs[["ECON"]][,PID] & source %chin% NLs[["ECON"]][,PID]]
+ELs[["ECON_1980"]] <- el[target %chin% NLs[["ECON_1980"]][,PID] & source %chin% NLs[["ECON_1980"]][,PID]]
+```
+
+# Data Overview
+## Table: Overview on the three discussed subsamples
+```{r overview}
+# Create Table
+fun.ovw.tab <- function(x=nl,y=el) { 
+						y <- y[target %chin% x[,PID] & source %chin% x[,PID]]
+						data.table(x[!PID %chin% y[,target],.N] / x[,.N]*100, # zero cit
+								   x[PID %chin% y[,target],.N],  # cited articles
+								   y[,.N], # total citations
+								   x[!PID %chin% y[,.N,target][,target],Gini(c(rep(0,.N),y[,.N,target][,N]))], # gini of citations per article
+								   y[,.N,target][,Gini(N)], # gini of citations
+								   x[!PID %chin% y[,.N,target][,target],max(c(rep(0,.N),y[,.N,target][,N]))], # most cited article
+								   x[!PID %chin% y[,.N,target][,target],mean(c(rep(0,.N),y[,.N,target][,N]))], # mean citations
+								   x[!PID %chin% y[,.N,target][,target],median(c(rep(0,.N),y[,.N,target][,N]))], #median citations
+								   x[!PID %chin% y[,.N,target][,target],sd(c(rep(0,.N),y[,.N,target][,N]))], # standard diviation
+								   # y[,.N,target][,sd(N)],  # standard diviation
+								   x[,.N] # total articles
+									) 
+								}
+xt <- rbindlist(lapply(seq_along(NLs), function(x) fun.ovw.tab(NLs[[x]],el)))
+xt <- as.data.frame(t(xt))
+## Name
+cols <- c("Share of articles with zero citations",
+					"Cited articles",
+					"Total citations",
+					"Gini of citations per article",
+					"Gini of citations per cited article",
+					"Citations of the most highly cited article",
+					"Mean citations per article",
+					"Median citations per article",
+					"Standard deviation of citations per article",
+					"Total articles")
+rownames(xt) <- unlist(cols)
+xt <- xt[,c(2,1,3)]
+colnames(xt) <- c("All journals","2016 journals","1980-2014")
+## Sort
+ xt <- xt[c(10,2,3,1,7,8,6,9,4,5),]
+# Make xtable
+dig <- matrix(c(rep(0,10),rep(c(0,0,0,2,2,0,0,2,2,2),3)),ncol=4)
+cap <- "Overview on the three discussed subsamples"
+alg <- c("l","r","r","r")
+lab <- c("table:annex_ovw")
+xt <- xtable(xt,align=alg,digits=dig,caption=cap,label=lab)
+print(xt,type="latex",hline.after=c(-1,-1,0,dim(xt)[1],dim(xt)[1]),table.placement="!htbp",
+		file="export_latex/annex_ovw.tex", size="\\scriptsize",
+		format.args=list(big.mark = ","))
+
+# Plot
+datatable(xt)
+```		
+
+## Figure: Number of articles and citations each year, 1956-2016
+```{r}
+xt <- merge(NLs[["ECON"]][,.N,by=year],
+			merge(ELs[["ECON"]],NLs[["ECON"]][,PID,year],by.x="source",by.y="PID")[,.N,by=year],
+			by="year")
+setnames(xt,2:3,c("pub_art_sou","cit_sou"))
+
+g <- ggplot(xt,aes(x=year)) + 
+    geom_line(aes(y = cit_sou/1000,color="Citations (left axis)"),size=0.8) +
+    geom_line(aes(y = pub_art_sou/100,color="Articles (right axis)"),size=0.8) + 
+	scale_x_continuous(breaks=seq(1956, 2016, 10)) + 
+	scale_y_continuous(breaks=c(seq(0,300,50)), limits =c(0,300), sec.axis = sec_axis(~./10,name = "Articles (in thousand)",breaks=seq(0,30,5))) +				
+	scale_colour_manual(name="",values=c("blue4","tomato")) + 
+	ylab("Citations (in thousand)") + xlab("Year") + 
+    theme(axis.text.x = element_text(hjust = 0.6)) +	
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1956,color="#777777") +
+    theme(axis.text.x = element_text(hjust = 0.6))
+g$vp = grid::viewport(height=1, width=1)
+## Plot
+ggsave(file="export_latex/ovw_pub_cit_2ax.pdf",width=20,height=20,units="cm",dpi = 600, device = "pdf")
+datatable(xt)
+```
+
+## Figure: Number of published and cited journals each year, 1956-2016
+```{r}
+jou_pub <- unique(NLs[["ECON"]][,data.table(year,journal)])[,.N,by=year]
+jou_cit <- merge(ELs[["ECON"]],NLs[["ECON"]][,PID,journal],by.x="target",by.y="PID")[,data.table(source,journal)]
+jou_cit <- merge(jou_cit,NLs[["ECON"]][,PID,year],by.x="source",by.y="PID")[,unique(data.table(year,journal))][,.N,by=year]
+jou <- merge(jou_pub,jou_cit,by="year",suffixes=c("pubs","cits"))
+jou <- melt(jou,id.vars="year")
+jou[,variable:=factor(variable,levels=sort(unique(variable),decreasing=T))]
+setorder(jou,-variable)
+## Plot
+g <- 
+ggplot(jou) + geom_line(aes(y = value,x=year,color=variable,group=variable),size=0.8) + 
+	scale_x_continuous(breaks=seq(1956, 2016, 10)) + 
+	scale_colour_manual(name="",
+						values=c("tomato","blue4"),
+						labels=c("Number of cited journals","Number of published journals")) + 
+	ylab("Absolute") + xlab("Year") + 
+	scale_y_continuous(breaks=c(seq(0,600,50)), limits =c(0,600)) + 
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1956,color="#777777") + 
+    theme(axis.text.x = element_text(hjust = 0.6))
+## Plot
+g	
+ggsave(file="export_latex/ovw_joupub_joucit.pdf",width=20,height=20,units="cm")
+datatable(jou)
+```
+
+# Article Concentration
+## Figure: Share of cumulative articles in the respective year cited at least once, 1956-2016
+```{r article_conc}
+# Calculate Table
+citeable <- NLs[["ECON"]][,.N,by=year]
+setorder(citeable,year)
+citeable <- citeable[,data.table(year,Ncum=cumsum(N))]
+cited <- merge(NLs[["ECON"]][,PID,year],ELs[["ECON"]],by.x="PID",by.y="source")[,unique(data.table(year,target))][,.N,by=year]
+xt <- merge(cited,citeable,by="year")[,data.table(year,share=N/Ncum*100,var="Share of cited articles")]
+
+# Make Plot
+g <-ggplot(xt) + geom_line(aes(y=share,x=year,group=var,color="Share"),size=0.8) + 
+				scale_x_continuous(breaks=seq(1956, 2016, 10)) + 
+				ylab("Percent") + xlab("Year") + 
+				scale_y_continuous(breaks=c(seq(0,30,10)), limits =c(0,30)) +
+				geom_hline(yintercept = 0,color="#777777") + 
+				geom_vline(xintercept = 1956,color="#777777") + 
+				theme(axis.text.x = element_text(hjust = 0.6)) +
+				scale_colour_manual(name="",values="black") #+
+				#guides(color=guide_legend(nrow=1,byrow=TRUE))  
+g$vp = grid::viewport(height=1, width=1)
+## Plot
+g 
+ggsave(file="export_latex/ovw_citeable_articles.pdf",width=20,height=20,units="cm",dpi = 600, device = "pdf")
+datatable(xt)
+```	
+
+## Figure: Share of citations to the top 1, 5, 10, 50 percent of articles each year, 1956-2016
+```{r}
+## Calculate Top Percent Shares
+xt <- merge(NLs[["ECON"]][,PID,year],ELs[["ECON"]],by.x="PID",by.y="source")[,.N,by=c("year","target")][order(year,-N)][,Nperc:=N/sum(N),by=year][,Ncum:=cumsum(N),by=year][,NcumPerc:=Ncum/sum(N),by=year][,Arank:=1:.N,by=year][,paste0("perc",c(1,5,10,50)):=lapply(c(0.01,0.05,0.1,0.5), function(x) NcumPerc[Arank == ceiling(.N*x)]*100),by=year][,unique(data.table(year,perc1,perc5,perc10,perc50))]
+
+# Plot
+xt <- melt(xt,id.var="year",variable.factor=T)
+
+
+ggplot(xt,aes(year)) + 
+	geom_line(aes(y = value,color=variable,group=variable), position = "identity",size=0.8) + 
+    scale_x_continuous(breaks=c(seq(1956, 2016, 10),2016)) + 
+	scale_color_discrete(name="",
+                         labels=c("Top 1%", "Top 5%", "Top 10%", "Top 50%")) +
+	ylab("Percent") + xlab("Year") + 
+	scale_y_continuous(breaks=c(seq(0,100,10)), limits =c(0,100)) +	
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1956,color="#777777") + 
+    theme(axis.text.x = element_text(hjust = 0.6))
+ggsave(file="export_latex/share_top_perc.pdf",width=20,height=20,units="cm")
+datatable(xt)
+
+```
+
+## Figure: Gini coefficients for the distribution of citations among the cited articles in the respective year, 1956-2016
+```{r}
+## Calculate Gini Coefficients
+art_FT <- merge(ELs[["ECON"]][,source,target],NLs[["ECON"]][,PID,year],by.x="source",by.y="PID")[,data.table(year,target)][,.N,by=c("year","target")]
+xt <- art_FT[,data.table(gini=Gini(N),herf=Herfindahl(N)),by=year][order(year)]
+xt[,year:=as.numeric(year)]
+## Plot
+g <- ggplot(xt,aes(x=year)) +
+    geom_line(aes(y = gini),size=0.8) +
+    # geom_line(aes(y = herf*100,color="Herfindahl")) + 
+    scale_x_continuous(breaks=seq(1956, 2016, 10)) + 
+	# scale_y_continuous(breaks=c(seq(0,1,.1)), limits =c(0,1), sec.axis = sec_axis(~./100,name = "Herfindahl Index",breaks=seq(0,.01,.001))) +				
+	ylab("Gini") + xlab("Year") + 
+    theme(axis.text.x = element_text(hjust = 0.6)) + 
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1956,color="#777777") +
+    geom_line(aes(y = gini,color="Gini"),size=0.8) +
+	scale_colour_manual(name="",values="black") +
+	guides(color=guide_legend(nrow=1,byrow=TRUE))  	
+g$vp = grid::viewport(height=1, width=1)
+g
+ggsave(file="export_latex/gini.pdf",width=20,height=20,units="cm")
+datatable(xt)
+```
+
+# Journal concentration
+## Code Articles
+```{r journal_conc}
+# Journals
+## Big5j
+joubig5 <- fread("../../Daten/selection_lists/jbig5.csv",quote="\"",header=F)[,V1]
+NLs[["ECON"]][,jbig5:=ifelse(journal %chin% joubig5,"jbig5","jbig5oth")]
+NLs[["ECON"]][,journalbig5:=ifelse(journal %chin% joubig5,journal,"journalbig5oth")]
+## Big5jcit
+joubig5cit <- names(tail(merge(el,NLs[["ECON"]][,PID,journal],by.x="target",by.y="PID")[,sort(table(journal))],5))
+NLs[["ECON"]][,jbig5cit:=ifelse(journal %chin% joubig5cit,"jbig5cit","jbig5citoth")]
+NLs[["ECON"]][,journalbig5cit:=ifelse(journal %chin% joubig5cit,journal,"journalbig5citoth")]
+## Big5citjou_h
+joubig5cith <- names(tail(merge(el,NLs[["ECON"]][henho=="het",PID,journal],by.x="target",by.y="PID")[,sort(table(journal))],5))
+NLs[["ECON"]][,jbig5cith:=ifelse(journal %chin% joubig5cith,"jbig5cith","jbig5cithoth")]
+NLs[["ECON"]][,journalbig5cith:=ifelse(journal %chin% joubig5cith,journal,"journalbig5cithoth")]
+```
+
+## Table: The 'Top Five' journals in economics, 1956-2016
+```{r}
+# Table: Calculate data
+xt <- list(
+	NLs[["ECON"]][,data.table(art=.N),by=journal][,art_share:=art/sum(art)*100][journal %chin% joubig5],
+	merge(ELs[["ECON"]],NLs[["ECON"]][,data.table(PID,journal)],by.x="target",by.y="PID")[,data.table(cit=.N),by=journal][,cit_share:=cit/sum(cit)*100][journal %chin% joubig5],
+	merge(ELs[["ECON"]],NLs[["ECON"]][,data.table(PID,journal)],by.x="target",by.y="PID")[,.N,by=c("journal","target")][order(-N)][1:100,top100:=.N/100*100,by=journal][1:500,top500:=.N/500*100,by=journal][1:1000,top1000:=.N/1000*100,by=journal][journal %chin% joubig5 & !is.na(top100),unique(data.table(journal,top100,top500,top1000))]
+)
+xt <- Reduce(merge,xt)
+## Add total column
+xt <- rbind(xt,data.table(journal="total",xt[,lapply(.SD,sum),.SDcols=names(xt)[-1]]))
+## Calculate mean cit per art
+xt[,cit_per_art:=cit/art]
+
+# Name and sort table
+xt[,journal:=c("AER","Ectra","JPE","QJE","REStud","Total")]
+xt <- xt[,c(1,2,4,9,3,5,6,7,8)]
+setnames(xt,c("","Articles","Citations","Citations per article","Share of articles","Share of citations",
+               "Share of top 100 articles","Share of top 500 articles","Share of top 1000 articles"))
+			   
+# Latex Table
+dig <- c(0,0,0,2,2,2,0,2,2)
+cap <- "The 'Top Five' journals in economics, 1956-2016"
+lab <- c("table:journal")
+bold <- function(x) {paste('{\\textbf{',x,'}}', sep ='')}
+alg <- c(" l","  R{1cm}","  R{1.18cm}","  R{1.2cm}","  R{1.25cm}","  R{1.28cm}"," R{1.25cm}"," R{1.25cm}"," R{1.33cm}")
+## Export Table
+xt <- xtable(xt,caption=cap,align=c("r",alg),label=lab,digits=c(0,dig))
+print(xt,type="latex",hline.after=c(-1,-1,0,5,6,6),table.placement="!htbp",
+		file="export_latex/journal.tex",size="\\scriptsize",#sanitize.colnames.function = bold,
+		include.rownames=F,	align=alg,format.args=list(big.mark = ",")) 
+
+# Plot table
+datatable(xt)
+```
+
+## Figure: Share of citations and articles of `Top Five' journals, 1956-2014; corrected share normalised to 1970
+```{r}
+# Calculate data
+## Citation Share
+cit_share <- merge(ELs[["ECON"]][,source,target],NLs[["ECON"]][,PID,year],by.x="source",by.y="PID")[,data.table(year,target)][,.N,by=c("year","target")]
+cit_share <- merge(unique(cit_share),NLs[["ECON"]][,PID,jbig5],by.x="target",by.y="PID")[,data.table(year,jbig5,N)][,sum(N),by=c("year","jbig5")][order(year)]
+cit_share <- dcast(cit_share,year~jbig5)[,data.table(year,cit_share=jbig5/(jbig5 + jbig5oth))]
+## Publication Share
+pub_share <- NLs[["ECON"]][,year,jbig5][,.N,by=c("year","jbig5")][order(year,jbig5)][,data.table(year,pub_cumsum=cumsum(N),pub_sum=N),by=c("jbig5")]
+pub_share <- dcast(pub_share,year~jbig5,value.var=c("pub_sum","pub_cumsum"))[,data.table(year, pub_share=pub_sum_jbig5/(pub_sum_jbig5 + pub_sum_jbig5oth),pub_cumsum_share=pub_cumsum_jbig5/(pub_cumsum_jbig5 + pub_cumsum_jbig5oth))]
+## Corrected Share
+xt <- merge(cit_share,pub_share)[,pub_cumsum_share_norm:=pub_cumsum_share/pub_cumsum_share[year==1970]][,cit_to_pub_share:=cit_share/pub_cumsum_share_norm]
+
+# Plot
+xt <- melt(xt[,-"pub_cumsum_share_norm"],id.vars="year",variable.factor=F)
+xt[,variable:=factor(variable,levels=c("pub_share","pub_cumsum_share","cit_share","cit_to_pub_share"))]
+labs <- c("Share of articles","Share of cumulative articles","Share of citations","Corrected share of citations")
+ggplot(xt,aes(y = value*100,x=year,color=variable,linetype=variable)) + geom_line(size=0.8) + 
+	scale_colour_manual(name="",values=c("blue4","blue4","tomato","tomato"),labels=labs) + 
+	scale_linetype_manual(name="",values=c(1,2,1,3),labels=labs) + 
+    scale_x_continuous(breaks=c(seq(1956, 2016, 10),2016)) + 
+	ylab("Percent") + xlab("Year") +
+	scale_y_continuous(breaks=c(seq(0,65,10)), limits =c(0,65))+#, sec.axis = sec_axis(~./10,name = "Corrected share of citations",breaks=seq(0,10,1))) +				
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1956,color="#777777") + 
+    theme(axis.text.x = element_text(hjust = 0.6)) + 
+	guides(color=guide_legend(nrow=2,byrow=FALSE),linetype=guide_legend(nrow=2,byrow=FALSE)) 
+ggsave(file="export_latex/j_citation_to_cum_pub_share_ratio.pdf",width=20,height=20,units="cm")
+datatable(xt)
+```		
+
+## Figure: Share of `Top Five` journals in 100, 500, 1000 most-cited articles each year, 5-year weighted moving average, 1956-2016
+```{r}		
+# Calculate Data
+xt <- merge(NLs[["ECON"]][,PID,year],ELs[["ECON"]],by.x="PID",by.y="source")[,.N,by=c("year","target")][order(year,-N)]
+xt <- merge(xt,NLs[["ECON"]][,PID,jbig5],by.x="target",by.y="PID")[order(year,-N)][,Nrank:=1:.N,by=year][,int:=1][,top100:=sum(int[Nrank <=100 & jbig5 == "jbig5"])/min(sum(int),100)*100,by=year][,top500:=sum(int[Nrank <=500 & jbig5 == "jbig5"])/min(sum(int),500)*100,by=year][,top1000:=sum(int[Nrank <=1000 & jbig5 == "jbig5"])/min(sum(int),1000)*100,by=year][,unique(data.table(year,top100,top500,top1000))]
+## Reshape
+xt <- melt(xt,id.vars="year")
+
+# Smooth Data							
+setkey(xt,variable,year)
+fun.wm <- function(x) weighted.mean(x,w=c(0.1,0.25,0.3,0.25,0.1),na.rm = T)
+xt <- xt[CJ(unique(xt$variable), seq(min(1954), max(2018)))][,
+    average:=rollapply(value, 5, fun.wm, fill = NA,align ="center"), by=variable][year <= 2016 & year >=1956]
+	
+# Plot
+labs <- c("Top 100 articles","Top 500 articles","Top 1000 articles")
+ggplot(xt,aes(x=year,color=variable,group=variable))  + 
+	geom_point(aes(y = value,shape=variable), alpha = 0.9,size=1.1) + 
+	geom_line(aes(y = average),size=0.8) + 
+    scale_color_discrete(name="",labels=labs) + 
+	scale_shape_discrete(name="",labels=labs) +
+    scale_x_continuous(breaks=c(seq(1956, 2016, 10),2016)) + 
+	scale_y_continuous(breaks=c(seq(0,100,10))) +
+    coord_cartesian(ylim=c(0, 100))	+
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1956,color="#777777") + 
+    theme(axis.text.x = element_text(hjust = 0.6))  +
+	ylab("Percent") + xlab("Year") +
+	guides(color=guide_legend(nrow=2,byrow=TRUE))
+	
+ggsave(file="export_latex/j_share_in_top_abs.pdf",width=20,height=20,units="cm")
+
+#values for text
+xt[year %in% 1972:1976,mean(value),by=variable]
+xt[year %in% 2012:2016,mean(value),by=variable]
+
+datatable(xt)
+```
+
+## Figure: Gini coefficients of citations to cited journals in the respective year, 1956-2016
+```{r}
+# Calculate Data
+art_FT <- merge(ELs[["ECON"]][,source,target],NLs[["ECON"]][,PID,year],by.x="source",by.y="PID")[,data.table(year,target)][,.N,by=c("year","target")]
+xt <- merge(art_FT,NLs[["ECON"]][,PID,journal],by.x="target",by.y="PID")[,data.table(year,journal,N)][,sum(N),by=c("year","journal")][,data.table(gini=Gini(V1)),by=year][order(year)][,year:=as.numeric(year)]
+
+# Plot
+g <- 
+ggplot(xt,aes(x=year)) +
+    geom_line(aes(y = gini,color="Gini"),size=0.8) +
+    # geom_line(aes(y = herf*100,color="Herfindahl")) + 
+    scale_x_continuous(breaks=seq(1956, 2016, 10)) + 
+	scale_y_continuous(breaks=c(seq(0,1,.1)), limits =c(0,1))+#, sec.axis = sec_axis(~./100,name = "Herfindahl Index",breaks=seq(0,.01,.001))) +				
+	# scale_colour_discrete(name="") + 
+	ylab("Gini") + xlab("Year") + 
+    theme(axis.text.x = element_text(hjust = 0.6)) + 
+	scale_colour_manual(name="",values="black") +
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1956,color="#777777") +
+	guides(color=guide_legend(nrow=1,byrow=TRUE))  
+g$vp = grid::viewport(height=1, width=1)
+g
+ggsave(file="export_latex/j_gini.pdf",width=20,height=20,units="cm")
+
+datatable(xt)
+```
+
+# Region
+## Code Articles
+```{r region_conc}
+reg <- NLs[["ECON_1980"]][,unique(unlist(strsplit(region,split=",")))]
+reg <- reg[nchar(reg) > 3 & !is.na(reg) ] # firm names in region/country coding
+## Create variable for each region
+for (i in reg) NLs[["ECON_1980"]][,paste0("region_",i):=ifelse(grepl(i,region),TRUE,FALSE)] # Seperate
+## Create variable for articles without region.
+NLs[["ECON_1980"]][,region_NA:=ifelse(is.na(region),TRUE,FALSE)]
+regs <- grep("region_",names(NLs[["ECON_1980"]]),value=T)
+```
+
+
+
+
+## Table: Eight world regions in economics, 1980-2014
+```{r}
+# Calculate Data
+xt <- rbind(
+	NLs[["ECON_1980"]][,int:=1][,lapply(.SD,function(x) c(sum(int[x == T]),(sum(int[x == T])/sum(int))*100)),.SDcols=regs],
+	merge(ELs[["ECON_1980"]],NLs[["ECON_1980"]][,c("PID",regs),with=F],by.x="target",by.y="PID")[,int:=1][,lapply(.SD,function(x) c(sum(int[x == T]),(sum(int[x == T])/sum(int))*100)),.SDcols=regs]
+)
+xt <- transpose(xt)[,regions:=regs][order(regions)]
+## Calculate citations per article
+xt[,cit_mean:=V3/V1,by=regions]
+
+# Rename and reoder
+## Rename rows
+regs_fn <- c("Africa","Asia","Eastern Europe","Latin America","Middle East","Not Assigned","North America","Oceania","Western Europe")
+xt[,regions:=regs_fn]
+## Rename cols
+xt <- xt[,c(5,1,3,6,2,4)]
+setnames(xt,c("World Region","Articles","Citations","Citations per article","Share of articles","Share of citations"))
+setorder(xt,-`Share of articles`)
+xt <- as.data.frame(xt[c(1,2,4,5,6,7,8,9,3),])
+
+region_order <- unlist(xt[,1]) # save order for the graphik later
+rownames(xt) <- unlist(xt[,1])
+
+# Make xtable
+dig <- c(0,0,0,2,2,2)
+alg <- c("l","R{1.7cm}","R{1.7cm}","R{1.7cm}","R{1.7cm}","R{1.7cm}")
+cap <- "Eight world regions in economics, 1980-2014"
+lab <- c("table:region")
+xt <- xtable(xt,caption=cap,align=c("r",alg),label=lab,digits=c(0,dig)) #
+print(xt,type="latex",hline.after=c(-1,-1,0,8,9,9),table.placement="!htbp",
+		file="export_latex/region.tex",
+		size="\\scriptsize",#sanitize.colnames.function = bold,
+		include.rownames=F,format.args=list(big.mark = ","))
+
+# Plot
+datatable(xt)
+```
+
+## Figure: Share of articles by world region each year, 1980-2014
+```{r}
+art_share <- NLs[["ECON_1980"]][,int:=1][,lapply(.SD,function(x) (sum(int[x == TRUE])/sum(int))*100),.SDcols=regs,by=year]
+art_share <- art_share[,order(names(art_share)),with=F]
+setnames(art_share,c(regs_fn,"year"))
+art_share <- melt(art_share,id.vars="year",variable.factor=F)
+art_share[,variable:=factor(variable,levels=region_order)]
+
+ggplot(art_share) + geom_bar(aes(y=value,x=year),stat="identity") + facet_wrap(~ variable)  + 
+		scale_x_continuous(breaks=c(seq(1980, 2014, 5))) + 
+		theme(axis.text.x = element_text(angle = 45, hjust = 0.6,size=14),
+			text = element_text(size=24),axis.text.y = element_text(size=14), 
+			axis.title = element_text(size=18)) +
+		ylim(0,100) + ylab("Percent") + xlab("Year")
+
+ggsave(file="export_latex/r_share_art.pdf",width=20,height=20,units="cm")
+
+datatable(art_share)
+
+## with lines (for revision letter)
+ggplot(art_share) + geom_line(aes(y=value,x=year),stat="identity") + facet_wrap(~ variable)  + 
+		scale_x_continuous(breaks=c(seq(1980, 2014, 5))) + 
+		theme(axis.text.x = element_text(angle = 45, hjust = 0.6,size=14),
+			text = element_text(size=24),axis.text.y = element_text(size=14), 
+			axis.title = element_text(size=18)) +
+		ylim(0,100) + ylab("Percent") + xlab("Year")
+ggsave(file="export_latex/r_share_art_lines.pdf",width=20,height=20,units="cm")
+ggsave(file="export_latex/r_share_art_lines.png",width=20,height=20,units="cm")
+
+
+```
+
+
+
+## Figure: Share of citations to world region each year, 1980-2014
+
+```{r}
+cit_share <- merge(NLs[["ECON_1980"]][,PID,year],ELs[["ECON_1980"]],by.x="PID",by.y="source")
+cit_share <- merge(cit_share,NLs[["ECON_1980"]][,c("PID",regs),with=F],by.x="target",by.y="PID")[,int:=1][,lapply(.SD,function(x) (sum(int[x == TRUE])/sum(int))*100),.SDcols=regs,by=year]#[,sample:="cit_share"]
+cit_share <- cit_share[,order(names(cit_share)),with=F]
+setnames(cit_share,c(regs_fn,"year"))
+cit_share <- melt(cit_share,id.vars="year",variable.factor=F)
+cit_share[,variable:=factor(variable,levels=region_order)]
+
+ggplot(cit_share) + geom_bar(aes(y=value,x=year),stat="identity") + facet_wrap(~ variable)  + 
+		scale_x_continuous(breaks=c(seq(1980, 2014, 5))) + 
+		theme(axis.text.x = element_text(angle = 45, hjust = 0.6,size=14),
+			text = element_text(size=24),axis.text.y = element_text(size=14), 
+			axis.title = element_text(size=18)) +
+		ylim(0,100) + ylab("Percent") + xlab("Year")
+ggsave(file="export_latex/r_share_cit.pdf",width=20,height=20,units="cm")
+
+datatable(cit_share)
+
+## With lines (for revisions letter)
+ggplot(cit_share) + geom_line(aes(y=value,x=year),stat="identity") + facet_wrap(~ variable)  + 
+		scale_x_continuous(breaks=c(seq(1980, 2014, 5))) + 
+		theme(axis.text.x = element_text(angle = 45, hjust = 0.6,size=14),
+			text = element_text(size=24),axis.text.y = element_text(size=14), 
+			axis.title = element_text(size=18)) +
+		ylim(0,100) + ylab("Percent") + xlab("Year")
+ggsave(file="export_latex/r_share_cit_lines.pdf",width=20,height=20,units="cm")
+ggsave(file="export_latex/r_share_cit_lines.png",width=20,height=20,units="cm")
+```	
+
+# Institutions
+```{r institution_conc}
+# Code Variables
+NLs[["ECON_1980"]][is.na(inst),inst:="instoth"]
+sel <- NLs[["ECON_1980"]][,PID]
+insbig100cit <- merge(ELs[["ECON_1980"]],NLs[["ECON_1980"]][,PID,inst],by.x="target",by.y="PID",all=F)[,data.table(unlist(lapply(strsplit(inst,split=","),unique)))][,.N,by=V1][order(-N)][1:100,V1]
+non_uni <- c("UNIVER_LONDON","CENTRE_ECONOM_POLICY_RESEAR_UK","instoth","ASIA_PACIFI")
+insbig100cit <- insbig100cit[!insbig100cit %chin% non_uni]
+## Create variables for five most cited institutions
+NLs[["ECON_1980"]][,instbig5cit:=ifelse(grepl(paste(insbig100cit[1:5],collapse="|"),inst),TRUE,FALSE)] ## Merged
+## Create variables for twenty most cited institutions
+NLs[["ECON_1980"]][,instbig20cit:=ifelse(grepl(paste(insbig100cit[1:20],collapse="|"),inst),TRUE,FALSE)] # Merged
+for (i in insbig100cit[1:20]) NLs[["ECON_1980"]][,paste0("instbig20cit_",i):=ifelse(grepl(i,inst),TRUE,FALSE)] # Seperate
+## List with institute columns
+insts <- grep("instb",names(NLs[["ECON_1980"]]),value=T)
+```
+
+## Table: The top 20 institutions in economics, 1980-2014
+```{r}
+# Calculate Data
+xt <- rbind(
+	NLs[["ECON_1980"]][,int:=1][,lapply(.SD,function(x) c(sum(int[x == T]),(sum(int[x == T])/sum(int))*100)),.SDcols=insts],
+	merge(ELs[["ECON_1980"]][,.N,by=target][order(-N)][,cit_rank:=1:.N][,int:=1],NLs[["ECON_1980"]][,c("PID",insts),with=F],by.x="target",by.y="PID")[,lapply(.SD,function(x) c(sum(N[x == T]),(sum(N[x == T])/sum(N))*100,(sum(int[cit_rank <= 100 & x == T])/sum(int[cit_rank <= 100]))*100,(sum(int[cit_rank <= 500 & x == T])/sum(int[cit_rank <= 500]))*100,(sum(int[cit_rank <= 1000 & x == T])/sum(int[cit_rank <= 1000]))*100)),.SDcols=insts]
+)
+
+xt <- transpose(xt)[,institutions:=insts][order(institutions)]
+## Calculate citations per article
+xt[,cit_mean:=V3/V1,by=institutions]
+
+# Add Rank and Order
+## Add Rank
+xt[,institutions:=gsub("instbig20cit_","",institutions)]
+dt_rank <- data.table(insbig100cit)
+dt_rank[,Rank:=1:.N]
+xt <- merge(xt,dt_rank,by.x="institutions",by.y="insbig100cit",all.x=T,all.y=F)
+## Order and have total in the end
+xt[is.na(Rank),Rank:=as.integer(c(23,22))]
+setorder(xt,Rank)
+
+# Add full institution name and column names
+inst_names <- fread("../../Daten/selection_lists/institutions_manuel.csv",header=T)
+inst_names <- rbind(inst_names,data.table(inst_shortname=c("instbig20cit","instbig5cit"),inst_manuelname=c("Top 20","Top 5")),fill=T)
+xt <- merge(xt,inst_names[,inst_shortname,inst_manuelname],by.x="institutions",by.y="inst_shortname",all.x=T)
+xt <- xt[order(Rank),c(10,11,2,4,9,3,5,6,7,8)]
+setnames(xt,c("Rank","Institution","Articles","Citations","Citations per article","Share of articles","Share of citations",
+              "Share of top 100 articles","Share of top 500 articles","Share of top 1000 articles"))
+
+# Latex Table
+xt <- as.data.frame(xt)
+xt[21:22,1] <- c("","")
+names(xt)[1] <- ""
+## Settings
+dig <- c(0,0,0,0,2,2,2,0,2,2)
+alg <- c("R{0.1cm}"," l","  R{1cm}","  R{1.17cm}","  R{1.5cm}","  R{0.9cm}"," R{0.9cm}"," R{1.1cm}"," R{1.1cm}"," R{1.25cm}")
+cap <- "The top 20 institutions in economics, 1980-2014"
+lab <- c("table:top_inst")
+## Save
+xt <- xtable(xt,caption=cap,align=c("r",alg),label=lab,digits=c(0,dig)) #
+print(xt,type="latex",hline.after=c(-1,-1,0,20,22,22),table.placement="!htbp",
+         file="export_latex/i_institutions.tex",size="\\scriptsize",
+		 include.rownames=F,#sanitize.colnames.function = bold,
+		 format.args=list(big.mark = ","))
+# Plot
+datatable(xt)
+```
+
+
+## Figure: Share of articles and citations of top 20 institutions, 1980-2014; corrected share normalised to 1995
+```{r}
+# Calculate Data
+## Citation Share
+cit_share <- merge(NLs[["ECON_1980"]][,PID,year],ELs[["ECON_1980"]],by.x="PID",by.y="source")
+cit_share <- merge(cit_share,NLs[["ECON_1980"]][,c("PID","instbig20cit"),with=F],by.x="target",by.y="PID")[,int:=1][,lapply(.SD,function(x) (sum(int[x == TRUE])/sum(int))*100),.SDcols="instbig20cit",by=year][,data.table(year,cit_share=instbig20cit)]
+## Article Share
+art_share <- NLs[["ECON_1980"]][,int:=1][,lapply(.SD,function(x) (sum(int[x == TRUE])/sum(int))*100),.SDcols="instbig20cit",by=year][order(year)][,data.table(year,art_share=instbig20cit)]
+## Cumulative Aritlce Share
+cum_share <- NLs[["ECON_1980"]][,.N,by=c("year","instbig20cit")][order(year)][,Nyear_cum:=cumsum(N),by=c("instbig20cit")][,cum_share:=Nyear_cum/sum(Nyear_cum)*100,by=year][instbig20cit == TRUE][,cum_share_norm:=cum_share/cum_share[year == 1995]][instbig20cit == TRUE][,data.table(year,cum_share,cum_share_norm)]
+## Merge
+xt <- Reduce(merge,list(cit_share,art_share,cum_share))
+xt[,cit_share_corr:=cit_share/cum_share_norm]
+
+# Plot
+xt <- melt(xt[,-"cum_share_norm"],id.vars="year",variable.factor=F)
+xt[,variable:=factor(variable,levels=c("art_share","cum_share","cit_share","cit_share_corr"))]
+labs <- c("Share of articles","Share of cumulative articles","Share of citations","Corrected share of citations")
+ggplot(xt,aes(y = value,x=year,color=variable,linetype=variable)) + geom_line(size=0.8) + 
+	scale_colour_manual(name="",values=c("blue4","blue4","tomato","tomato"),labels=labs) + 
+	scale_linetype_manual(name="",values=c(1,2,1,3),labels=labs) + 
+    scale_x_continuous(breaks=c(seq(1980, 2014, 5),2014)) + 
+	ylab("Percent") + xlab("Year") +
+	scale_y_continuous(breaks=c(seq(0,50,10)), limits =c(0,50))+#, sec.axis = sec_axis(~./10,name = "Corrected share of citations",breaks=seq(0,5,1))) +				
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1980,color="#777777") + 
+    theme(axis.text.x = element_text(hjust = 0.6)) + 
+	guides(color=guide_legend(nrow=2,byrow=FALSE),linetype=guide_legend(nrow=2,byrow=FALSE)) 
+ggsave(file="export_latex/i_citation_to_cum_pub_share_ratio.pdf",width=20,height=20,units="cm")
+datatable(xt)
+```		
+
+## Figure: Share of top 20 institutions in the 100, 500, 1000 most-cited articles each year, 5-year weighted moving average, 1980-2014
+```{r}		
+# Calculate Data
+xt <- merge(NLs[["ECON_1980"]][,PID,year],ELs[["ECON_1980"]],by.x="PID",by.y="source")[,.N,by=c("year","target")][order(year,-N)]
+xt <- merge(xt,NLs[["ECON_1980"]][,PID,instbig20cit],by.x="target",by.y="PID")[order(year,-N)][,Nrank:=1:.N,by=year][,int:=1][,top100:=sum(int[Nrank <=100 & instbig20cit == TRUE])/min(sum(int),100)*100,by=year][,top500:=sum(int[Nrank <=500 & instbig20cit == TRUE])/min(sum(int),500)*100,by=year][,top1000:=sum(int[Nrank <=1000 & instbig20cit == TRUE])/min(sum(int),1000)*100,by=year][,unique(data.table(year,top100,top500,top1000))]
+## Reshape
+xt <- melt(xt,id.vars="year")
+
+# Smooth Data							
+setkey(xt,variable,year)
+fun.wm <- function(x) weighted.mean(x,w=c(0.1,0.25,0.3,0.25,0.1),na.rm = T)
+xt <- xt[CJ(unique(xt$variable), seq(min(1978), max(2016)))][,
+    average:=rollapply(value, 5, fun.wm, fill = NA,align ="center"), by=variable][year <= 2014 & year >=1980]
+	
+# Plot
+labs <- c("Top 100 articles","Top 500 articles","Top 1000 articles")
+ggplot(xt,aes(x=year,color=variable,group=variable))  + 
+	geom_point(aes(y = value,shape=variable), alpha = 0.9,size=1.1) + 
+	geom_line(aes(y = average),size=0.8) + 
+    scale_color_discrete(name="",labels=labs) + 
+	scale_shape_discrete(name="",labels=labs) +
+    scale_x_continuous(breaks=c(seq(1980, 2014, 5),2014)) + 
+	scale_y_continuous(breaks=c(seq(0,100,10))) +
+    coord_cartesian(ylim=c(0, 100))	+
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1980,color="#777777") + 
+    theme(axis.text.x = element_text(hjust = 0.6))  +
+	ylab("Percent") + xlab("Year") +
+	guides(color=guide_legend(nrow=2,byrow=TRUE))
+ggsave(file="export_latex/i_share_in_top_abs.pdf",width=20,height=20,units="cm")
+datatable(xt)
+
+```
+
+# Author
+## Code Variables
+```{r author_conc}
+# Top Authors
+## Update TCm
+NLs[["ECON"]][,TCm:=NULL]
+NLs[["ECON"]] <- merge(NLs[["ECON"]],ELs[["ECON"]][,.N,by=target][,data.table(PID=target,TCm=N)],by="PID",all=T)
+NLs[["ECON"]][is.na(TCm),TCm:=0]
+
+## Identify Top Authors
+top_au <- NLs[["ECON"]][order(TCm,decreasing=T),tstrsplit(author,split=",")]
+top_au[,TCm:=NLs[["ECON"]][order(TCm,decreasing=T),TCm]]
+top_au <- melt(top_au,id.vars="TCm",na.rm=T)
+setnames(top_au,3,"author")
+top_au[,TCm:=sum(TCm),by=author]
+top_au[,Nart:=.N,by=author]
+
+top_au <- top_au[order(-TCm),unique(data.table(author,TCm,Nart,MeanCit=TCm/Nart))]
+## aTop10
+aut_top10 <- top_au[Nart > 10 & MeanCit > 10,author][1:10]
+NLs[["ECON"]][,atop10:=ifelse(grepl(paste(aut_top10,collapse="|"),author),TRUE,FALSE)]
+## aTop100
+aut_top100 <- top_au[Nart > 10 & MeanCit > 10,author][1:100]
+NLs[["ECON"]][,atop100:=ifelse(grepl(paste(aut_top100,collapse="|"),author),TRUE,FALSE)]
+
+auts <-c("atop10","atop100")
+write.csv(top_au[!is.na(TCm),data.table(author,TCm,Nartm=Nart,MeanCitm=MeanCit,Rankm=1:.N)],"../../Daten/selection_lists/auth_recode_m.csv",row.names=F)
+```
+
+## Table: Overview on the top 10 and 100 authors, 1956-2016
+```{r}
+# Calculate Data
+xt <- rbind(
+	NLs[["ECON"]][,int:=1][,lapply(.SD,function(x) c(sum(int[x == T]),(sum(int[x == T])/sum(int))*100)),.SDcols=auts],
+	merge(ELs[["ECON"]][,.N,by=target][order(-N)][,cit_rank:=1:.N][,int:=1],NLs[["ECON"]][,c("PID",auts),with=F],by.x="target",by.y="PID")[,lapply(.SD,function(x) c(sum(N[x == T]),(sum(N[x == T])/sum(N))*100,(sum(int[cit_rank <= 100 & x == T])/sum(int[cit_rank <= 100]))*100,(sum(int[cit_rank <= 500 & x == T])/sum(int[cit_rank <= 500]))*100,(sum(int[cit_rank <= 1000 & x == T])/sum(int[cit_rank <= 1000]))*100)),.SDcols=auts]
+)
+## Calculate citations per article
+xt <- rbind(xt,xt[3]/xt[1])
+
+# Rename and reorder table
+xt <- xt[c(1,3,8,2,4,5,6,7)]
+xt[,variable:= c("Articles","Citations","Citations per article","Share of articles","Share of citations",
+               "Share of top 100 articles","Share of top 500 articles","Share of top 1000 articles")]
+xt <- xt[,c(3,1,2)]
+setnames(xt,c("","Top 10 authors","Top 100 authors"))
+
+# Latex Table
+## Settings
+alg <- c("l","r","r")
+cap <- "Overview on the top 10 and 100 authors, 1956-2016"
+lab <- c("table:authors")
+dig <- matrix(c(rep(0,8),rep(c(0,0,2,2,2,0,2,2),2)),ncol=3,)
+xt <- xtable(xt,caption=cap,align=c("r",alg),label=lab,digits=cbind(matrix(rep(0,8),ncol=1),dig)) #
+print(xt,type="latex",hline.after=c(-1,-1,0,8,8),table.placement="!htbp",size="\\scriptsize",
+		file="export_latex/authors.tex",#sanitize.colnames.function = bold,
+		include.rownames=F,format.args=list(big.mark = ","))
+
+# Plot
+datatable(xt)
+```
+
+# Paradigmatic concentration
+## Code Variables
+```{r paradigm_conc}
+NLs[["ECON_2016"]][,het:=ifelse(henho=="het",TRUE,FALSE)]
+NLs[["ECON_2016"]][,ort:=ifelse(henho=="ort",TRUE,FALSE)]
+NLs[["ECON_2016"]][,tot:=TRUE]
+
+parad <- c("ort","het","tot")
+```
+
+## Table: Overview on paradigms in economics, 1956-2016
+```{r}
+# Calculate Data
+xt <- rbind(
+	NLs[["ECON_2016"]][,int:=1][,lapply(.SD,function(x) c(sum(int[x == T]),(sum(int[x == T])/sum(int))*100)),.SDcols=parad],
+	merge(ELs[["ECON_2016"]][,.N,by=target][order(-N)][,cit_rank:=1:.N][,int:=1],NLs[["ECON_2016"]][,c("PID",parad),with=F],by.x="target",by.y="PID")[,lapply(.SD,function(x) c(sum(N[x == T]),(sum(N[x == T])/sum(N))*100,(sum(int[cit_rank <= 100 & x == T])/sum(int[cit_rank <= 100]))*100,(sum(int[cit_rank <= 500 & x == T])/sum(int[cit_rank <= 500]))*100,(sum(int[cit_rank <= 1000 & x == T])/sum(int[cit_rank <= 1000]))*100,(sum(int[cit_rank <= 5000 & x == T])/sum(int[cit_rank <= 5000]))*100,(sum(int[cit_rank <= 10000 & x == T])/sum(int[cit_rank <= 10000]))*100)),.SDcols=parad]
+)
+## Calculate citations per article
+xt <- rbind(xt,xt[3]/xt[1],NLs[["ECON_2016"]][,data.table(ort=length(unique(journal[ort == TRUE])),het=length(unique(journal[het == TRUE])),tot=length(unique(journal[tot == TRUE])))])
+
+# Rename and reorder table
+xt <- xt[c(11,1,3,10,2,4,5,6,7,8,9)]
+xt[,variable:= c("Journal","Articles","Citations","Citations per article","Share of articles","Share of citations",
+               "Share of top 100 articles","Share of top 500 articles","Share of top 1000 articles","Share of top 5000 articles","Share of top 10000 articles")]
+xt <- xt[,c(4,1,2,3)]
+setnames(xt,c("","Mainstream","Heterodox","Total"))
+
+# Latex Table
+## Settings
+dig <- matrix(c(rep(0,11),rep(c(0,0,0,2,2,2,0,0,0,2,2),2),rep(c(0,0,0,2,0,0,0,0,0,0,0),1)),ncol=4,)
+alg <- c("l","r","r","r")
+cap <- "Overview on paradigms in economics, 1956-2016"
+lab <- c("table:school")
+xt <- xtable(xt,caption=cap,align=c("r",alg),label=lab,digits=cbind(matrix(rep(0,11),ncol=1),dig)) #
+## Print
+print(xt,type="latex",hline.after=c(-1,-1,0,11,11),table.placement="!htbp",
+		 size="\\scriptsize",file="export_latex/school_attr.tex",#sanitize.colnames.function = bold,
+		 include.rownames=F,format.args=list(big.mark = ","))
+# Plot
+datatable(xt)
+```
+
+## Figure: Share of heterodox articles and citations, 1956-2016; corrected share normalised to 1970
+```{r}
+# Calculate Data
+## Citation Share
+cit_share <- merge(NLs[["ECON_2016"]][,PID,year],ELs[["ECON_2016"]],by.x="PID",by.y="source")
+cit_share <- merge(cit_share,NLs[["ECON_2016"]][,c("PID","het"),with=F],by.x="target",by.y="PID")[,int:=1][,lapply(.SD,function(x) (sum(int[x == TRUE])/sum(int))*100),.SDcols="het",by=year][,data.table(year,cit_share=het)]
+## Article Share
+art_share <- NLs[["ECON_2016"]][,int:=1][,lapply(.SD,function(x) (sum(int[x == TRUE])/sum(int))*100),.SDcols="het",by=year][order(year)][,data.table(year,art_share=het)]
+## Cumulative Aritlce Share
+cum_share <- NLs[["ECON_2016"]][,.N,by=c("year","het")][order(year)][,Nyear_cum:=cumsum(N),by=c("het")][,cum_share:=Nyear_cum/sum(Nyear_cum)*100,by=year][het == TRUE][,cum_share_norm:=cum_share/cum_share[year == 1970]][het == TRUE][,data.table(year,cum_share,cum_share_norm)]
+## Merge
+xt <- Reduce(merge,list(cit_share,art_share,cum_share))
+xt[,cit_share_corr:=cit_share/cum_share_norm]
+
+# Plot
+xt <- melt(xt[,-"cum_share_norm"],id.vars="year",variable.factor=F)
+xt[,variable:=factor(variable,levels=c("art_share","cum_share","cit_share","cit_share_corr"))]
+labs <- c("Share of articles","Share of cumulative articles","Share of citations","Corrected share of citations")
+ggplot(xt,aes(y = value,x=year,color=variable,linetype=variable)) + geom_line(size=0.8) + 
+	scale_colour_manual(name="",values=c("blue4","blue4","tomato","tomato"),labels=labs) + 
+	scale_linetype_manual(name="",values=c(1,2,1,3),labels=labs) + 
+    scale_x_continuous(breaks=seq(1956, 2016, 10)) + 
+	ylab("Percent") + xlab("Year") +
+	scale_y_continuous(breaks=c(seq(0,20,10)), limits =c(0,20))+
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1956,color="#777777") + 
+    theme(axis.text.x = element_text(hjust = 0.6)) + 
+	guides(color=guide_legend(nrow=2,byrow=FALSE),linetype=guide_legend(nrow=2,byrow=FALSE)) 
+ggsave(file="export_latex/sc_citation_to_cum_pub_share_ratio.pdf",width=20,height=20,units="cm")
+
+# Numbers for paper
+xt[year %in% c(1956,1972,2016)& variable %in% c("art_share","cit_share")]
+
+#
+datatable(xt)
+```
+
+## Figure: Share of top 1, 5, 10, 50 percent of articles that were published in heterodox journals, 1956-2016
+```{r}
+# Calculate Data
+xt <- merge(NLs[["ECON_2016"]][,PID,year],ELs[["ECON_2016"]],by.x="PID",by.y="source")[,.N,by=c("year","target")][order(year,-N)]
+xt <- merge(xt,NLs[["ECON_2016"]][,PID,het],by.x="target",by.y="PID")[order(year,-N)][,Nrank:=1:.N,by=year][,int:=1][,lapply(c(0.01,0.05,0.1,0.5),function(x) (sum(int[Nrank <= ceiling(max(Nrank)*x) & het == TRUE])/sum(int[Nrank <=ceiling(max(Nrank)*x)]))*100),by=year]
+## Reshape
+xt <- melt(xt,id.vars="year")
+
+# Smooth Data							
+setkey(xt,variable,year)
+fun.wm <- function(x) weighted.mean(x,w=c(0.1,0.25,0.3,0.25,0.1),na.rm = T)
+xt <- xt[CJ(unique(xt$variable), seq(min(1954), max(2018)))][,
+    average:=rollapply(value, 5, fun.wm, fill = NA,align ="center"), by=variable][year <= 2016 & year >=1956]
+	
+# Plot
+labs <- c("Top 1% articles","Top 5% articles","Top 10% articles","Top 50% articles")
+ggplot(xt,aes(x=year,color=variable,group=variable))  + 
+	geom_point(aes(y = value,shape=variable), alpha = 0.9,size=1.1) + 
+	geom_line(aes(y = average),size=0.8) + 
+    scale_color_discrete(name="",labels=labs) + 
+	scale_shape_discrete(name="",labels=labs) +
+    scale_x_continuous(breaks=c(seq(1956, 2016, 10),2016)) + 
+	scale_y_continuous(breaks=c(seq(0,100,10))) +
+    coord_cartesian(ylim=c(0, 20))	+
+	geom_hline(yintercept = 0,color="#777777") + 
+	geom_vline(xintercept = 1956,color="#777777") + 
+    theme(axis.text.x = element_text(hjust = 0.6))  +
+	ylab("Percent") + xlab("Year") +
+	guides(color=guide_legend(nrow=2,byrow=TRUE))
+ggsave(file="export_latex/sc_share_in_top_perc_ma.pdf",width=20,height=20,units="cm")
+# Numbers for paper
+xt[year %in% c(1956,1975,2016)& variable %in% c("V1","V2","V3","V4")]
+
+#
+datatable(xt)
+
+```
+
+# Appendix
+## Table: Top 100 Authors, 1956-2016
+```{r annex}
+
+# Calculate data
+## Function to reformat author names
+simpleCap <- function(x) {
+  s <- strsplit(x, "_")[[1]]
+    paste(paste0(toupper(substring(s[1], 1,1)), tolower(substring(s[1], 2))),s[2],
+      sep=" ", collapse=" ")
+}
+xt <- top_au[1:100]
+xt[,author:=simpleCap(author),by=author]
+# xt[1:10]
+setnames(xt,c("Author","Citations","Articles","Citations per article"))
+
+# Excel table
+write.xlsx(xt,"export_excel/appendix.xlsx",sheetName="Authors",row.names=F)
+
+# Minor changes
+xt[,`R.`:=1:.N]
+xt <- xt[,c(5,1,2,3,4)]
+xt <- cbind(xt[1:50],xt[51:100])
+setnames(xt,c(1,6),c("",""))
+xt[41,Author:="La Porta R"]
+
+# Latex table
+## Settings
+dig <- c(0,0,0,0,0,2,0,0,0,0,2)
+alg <- c("C{0.2cm}","L{2.25cm}","R{1.1cm} ","R{0.9cm} ","R{1.4cm} |","C{0.3cm}","L{2.1cm}","R{1.1cm} ","R{0.9cm} ","R{1.4cm} ")
+cap <- "Top 100 Authors, 1956-2016"
+lab <- c("table:top_auth")
+## Print
+xt <- xtable(xt,caption=cap,align=c("r",alg),label=lab,digits=dig) #
+print(xt,type="latex",hline.after=c(-1,-1,0,50,50),table.placement="!htbp",
+        file="export_latex/a_top.tex", size="\\scriptsize",# sanitize.colnames.function = bold,
+		include.rownames=F,format.args=list(big.mark = ","))
+# Plot
+datatable(xt)
+```
+
+## Table: Top 100 Countries, 1980-2014
+```{r}
+# Code Variables
+cou <- NLs[["ECON_1980"]][,unique(unlist(strsplit(cou,",")))]
+for (i in cou) NLs[["ECON_1980"]][,paste0("cou_",i):=ifelse(grepl(paste0("(^|,)",i,"(,|$)"),cou),TRUE,FALSE)] # Seperate
+cous <- grep("cou_",names(NLs[["ECON_1980"]]),value=T)
+
+# Calculate Data
+xt <- rbind(
+	NLs[["ECON_1980"]][,int:=1][,lapply(.SD,function(x) c(sum(int[x == T]))),.SDcols=cous],
+	merge(ELs[["ECON_1980"]][,.N,by=target][order(-N)][,cit_rank:=1:.N][,int:=1],NLs[["ECON_1980"]][,c("PID",cous),with=F],by.x="target",by.y="PID")[,lapply(.SD,function(x) c(sum(N[x == T]))),.SDcols=cous]
+)
+xt <- transpose(xt)[,country:=cous][order(country)]
+## Calculate citations per article
+xt[,cit_mean:=V2/V1,by=country]
+
+# Minor Changes
+## Edit country
+xt[,country:=gsub("cou_","",country)]
+setnames(xt,c("Articles","Citations","Country","Citations per article"))
+## Add Region
+supnat <- unique(fread("../../Daten/selection_lists/country_region.csv",header=T)[,2:3])
+supnat <- supnat[!(V2 == "EGYPT" & V1 == "AFRICA")]
+supnat <- supnat[!(V2 == "REUNION" & V1 == "AFRICA")]
+xt <- merge(xt,supnat,by.x="Country",by.y="V2")
+## Add Rank
+setorder(xt,-Citations)
+xt[,R:=1:.N]
+## Fix names
+xt[,Country:=tools::toTitleCase(tolower(gsub("_"," ",Country)))]
+xt[,V1:=tools::toTitleCase(tolower(gsub("_"," ",V1)))]
+xt[grep("Usa",Country),Country:="USA"]
+xt[grep("Germany Fed Rep Ger",Country),Country:="Germany (FDR)"]
+xt[grep("Germany Ger Dem Rep",Country),Country:="Germany (GDR)"]
+xt[grep("United Arab Emirates",Country),Country:="U. A. Emirates"]
+xt[grep("Dominican Republic",Country),Country:="Dom. Republic"]
+xt[grep("Republic of Georgia",Country),Country:="Rep. of Georgia"]
+xt[grep("Germany Fed Rep Ger",Country),Country:="Germany (FDR)"]
+xt[grep("Netherlands Antilles",Country),Country:="Neth. Antilles"]
+xt[grep("Bosnia Herzegovina",Country),Country:="Bosnia Herzegov."]
+xt[grep("Germany Fed Rep Ger",Country),Country:="Germany (FDR)"]
+xt[grep("w Ind Assoc St",Country),Country:="West Indies AS"]
+xt[grep("Congo Democratic Republic",Country),Country:="Congo Dem. Rep."]
+xt[grep("Ussr",Country),Country:="USSR"]
+xt[,V1:=gsub("[[:lower:]]+| ","",V1)]
+xt <- xt[,c(6,5,1,3,2,4),with=F]
+setorder(xt,R)
+setnames(xt,c(" ","WR","Country","Citations","Articles","Citations per article"))
+
+# Excel Table
+write.xlsx(xt,"export_excel/appendix.xlsx",sheetName="Countries",append=T,row.names=F)
+
+# Latex table
+## Reorder for two page table
+# Latex table
+xt <- cbind(xt[1:50],xt[51:100])
+## Settings
+dig <- c(0,0,0,0,0,0,2,0,0,0,0,0,2)
+alg <- c("C{0.1cm}","L{0.2cm}","L{2.2cm}","R{1cm} ","R{0.9cm} ","R{1.35cm} |","C{0.1cm}","L{0.2cm}","L{2.05cm}","R{1cm} ","R{0.9cm} ","R{1.35cm} ")
+cap <- "Top 100 Countries, 1980-2014"
+lab <- c("table:country_full")
+## Print
+xt <- xtable(xt,caption=cap,align=c("r",alg),label=lab,digits=dig) #
+print(xt,type="latex",hline.after=c(-1,-1,0,50,50),table.placement="!htbp",
+        file="export_latex/countries_top100.tex", size="\\scriptsize",# sanitize.colnames.function = bold,
+		include.rownames=F,format.args=list(big.mark = ","))
+
+# Plot
+datatable(xt)
+```
+
+## Table: Top 100 Journals, 1956-2016
+```{r}
+## Table for journals (top 100)
+fltoupper <- function(x) gsub("(^|[[:space:]]|;|,)([[:alpha:]])", "\\1\\U\\2", tolower(x), perl=TRUE)
+
+xt <- merge(merge(el,NLs[["ECON"]][,.(PID,journal)],by.x="target",by.y="PID")[,.(Citations=.N),journal],NLs[["ECON"]][,.(Articles=.N),journal],by="journal",all=T,fill="0")[,Citations:=ifelse(is.na(Citations),0,Citations)][
+			,`Citations per article`:=Citations/Articles ][order(-Citations),.(` `=1:.N,Journal=fltoupper(journal),Citations,Articles,`Citations per article`)]
+
+
+write.xlsx(xt,"export_excel/appendix.xlsx",sheetName="Journals",append=T,,row.names=F)
+			
+# Latex table
+# xt[,Journal:=ifelse(nchar(Journal) >19,gsub("Journal","J",Journal),Journal)][
+   # ,Journal:=ifelse(nchar(Journal) >19,gsub("Economic|Economy|Economics","E",Journal),Journal)][
+   # ,Journal:=str_trunc(Journal,35)]
+# shorten names
+
+## Settings
+dig <- c(0,0,0,0,0,2)
+alg <- c("C{0.2cm}","L{7cm}","R{1.5cm} ","R{1.5cm} ","R{3cm}")
+# alg <- c("C{0.05cm}","L{4cm}","R{0.8cm} ","R{0.8cm} ","R{0.9cm} |","C{0.05cm}","L{4cm}","R{0.8cm} ","R{0.8cm} ","R{0.9cm} ")
+cap <- "Top 100 Journals, 1956-2016"
+lab <- c("table:top_journals_ap")
+
+# Plot
+datatable(xt)
+
+## Print
+xt <- xtable(xt[1:100],caption=cap,align=c("r",alg),label=lab,digits=dig) #
+print(xt,type="latex",hline.after=c(-1,-1,0,100),table.placement="!htbp",
+        file="export_latex/journal_top100.tex", size="\\scriptsize",# sanitize.colnames.function = bold,
+		include.rownames=F,format.args=list(big.mark = ","))
+```
+
