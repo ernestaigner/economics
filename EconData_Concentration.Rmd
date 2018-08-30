@@ -61,14 +61,14 @@ pre { /* Code block - determines code spacing between lines */
 
 # Intro
 
-The following code has been used to investigate six dimensions of concentration in economics The data was retrieved by Thompson Reuters' Web of Science. The insights drawn from this research are published by Florentin Glötzl and Ernest Aigner (2018) under the title 'Six Dimensions of Concentration in Economics: Evidence from a large-scale data set' in the Journal 'Science in Context'. We gratefully acknolwedge financial support by the Forschungsinstitut für Gesellschaftliche Weiterentwicklung (Research Institute for Societal Development). Both authors are located at the Institute for Ecological Economics, Department for Socioeconomics, Vienna University of Economics and Business; Welthandelsplatz 2/D5, 1020 Vienna, Austria. For questions regarding the code please contact Ernest Aigner (ernest.aigner@gmail.com).
+The following code has been used to investigate six dimensions of concentration in economics The data was retrieved by Thompson Reuters Web of Science. The insights drawn from this research are published by Florentin Glötzl and Ernest Aigner (2018) under the title 'Six Dimensions of Concentration in Economics: Evidence from a large-scale data set' in the Journal 'Science in Context'. We gratefully acknolwedge financial support by the Forschungsinstitut für Gesellschaftliche Weiterentwicklung (Research Institute for Societal Development). Both authors are located at the Institute for Ecological Economics, Department for Socioeconomics, Vienna University of Economics and Business; Welthandelsplatz 2/D5, 1020 Vienna, Austria. For questions regarding the code please contact Ernest Aigner (ernest.aigner@gmail.com).
 
 
 # Load settings
 
 ```{r, warning=FALSE,echo=FALSE,message=FALSE}
 # Load Packages
-packs <- lapply(c("car","dendroextras","effects","ellipse","plyr","faraway","foreign","leaps","qdap","tm","rgl","lattice","qdap","rmarkdown","ngram","stringr","gtable","data.table","ReporteRs","igraph","ggplot2","ggthemes","tm","readxl","parallel","SnowballC","stringi","xlsx","topicmodels","knitr","ineq","xtable","zoo","gridExtra","DT","stringdist"),library,character.only=T,quietly=T,verbose=F)
+packs <- lapply(c("car","dendroextras","effects","ellipse","plyr","faraway","foreign","leaps","qdap","tm","officer","flextable","flextable","rgl","lattice","qdap","rmarkdown","ngram","stringr","gtable","data.table","ReporteRs","igraph","ggplot2","ggthemes","tm","readxl","parallel","SnowballC","stringi","xlsx","topicmodels","knitr","ineq","xtable","zoo","gridExtra","DT","stringdist"),library,character.only=T,quietly=T,verbose=F)
 # Sys.setenv(RSTUDIO_PANDOC="C:/Program Files/RStudio/bin/pandoc");library(rmarkdown);render("EconData_Concentration.Rmd")
 
 bold <- function(x) {paste('{\\textbf{',x,'}}', sep ='')}
@@ -1090,6 +1090,18 @@ print(xt,type="latex",hline.after=c(-1,-1,0,10,16,26,27,27),table.placement="!ht
         file="../EconConcentration/export_latex/annex_research_items.tex", size="\\scriptsize", sanitize.text.function = bold.somerows,
 		include.rownames=F,format.args=list(big.mark = ","))
 
+## word file
+doc <- officer::read_docx()
+	
+# Word Export
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, paste0("Table 7: ", cap), style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_flextable(doc, value = xtable_to_flextable(xt), pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+		
 ## total
 data.table(arts=nl[remDT=="remove",.N],ref=el[sPID %chin% nl[remDT=="remove",PID],.N],cits=el[tPID %chin% nl[remDT=="remove",PID],.N])
 ## remove total
@@ -1235,6 +1247,7 @@ nl <- nl[,names_old,with=F]
 nl[,henho:=ifelse(henho==1,"het","ort")]
 nl <- nl[grepl("ECONOMICS",WC) & year <=2016]
 el <- el[source %chin% nl[,PID] & target %chin% nl[,PID]]
+
 ```
 
 
@@ -1296,10 +1309,28 @@ dig <- matrix(c(rep(0,10),rep(c(0,0,0,2,2,0,0,2,2,2),3)),ncol=4)
 cap <- "Overview on the three discussed subsamples"
 alg <- c("l","r","r","r")
 lab <- c("table:annex_ovw")
+
 xt <- xtable(xt,align=alg,digits=dig,caption=cap,label=lab)
 print(xt,type="latex",hline.after=c(-1,-1,0,dim(xt)[1],dim(xt)[1]),table.placement="!htbp",
 		file="export_latex/annex_ovw.tex", size="\\scriptsize",
 		format.args=list(big.mark = ","))
+
+
+# Word Export
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, paste0("Table 1: ", cap), style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_flextable(doc, value = xtable_to_flextable(xt), pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "Notes", style = NULL, pos = "after")
+doc <- body_add_par(doc, "a The total sample of all articles and citations listed in the Web of Science subject category economics between 1956 and 2016. This sample is used for the analysis for article, journal, and author concentration.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "b The restricted sample covering all articles and citations of journals that were still being published in 2016. This sample is used for the analysis of paradigmatic concentration.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "c The sample covers the time period for which data on affiliation is available in the InCites database.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "This sample is used for the analysis of geographic and institutional concentration.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+
+print(doc, target = "export_word/tables.docx")
 
 # Plot
 datatable(xt)
@@ -1312,12 +1343,13 @@ xt <- merge(NLs[["ECON"]][,.N,by=year],
 			by="year")
 setnames(xt,2:3,c("pub_art_sou","cit_sou"))
 
-g <- ggplot(xt,aes(x=year)) + 
+g <- 
+ggplot(xt,aes(x=year)) + 
     geom_line(aes(y = cit_sou/1000,color="Citations (left axis)"),size=0.8) +
     geom_line(aes(y = pub_art_sou/100,color="Articles (right axis)"),size=0.8) + 
 	scale_x_continuous(breaks=seq(1956, 2016, 10)) + 
 	scale_y_continuous(breaks=c(seq(0,300,50)), limits =c(0,300), sec.axis = sec_axis(~./10,name = "Articles (in thousand)",breaks=seq(0,30,5))) +				
-	scale_colour_manual(name="",values=c("blue4","tomato")) + 
+	scale_colour_manual(name="",values=c("#d7191c", "#2b83ba")) + 
 	ylab("Citations (in thousand)") + xlab("Year") + 
     theme(axis.text.x = element_text(hjust = 0.6)) +	
 	geom_hline(yintercept = 0,color="#777777") + 
@@ -1325,7 +1357,15 @@ g <- ggplot(xt,aes(x=year)) +
     theme(axis.text.x = element_text(hjust = 0.6))
 g$vp = grid::viewport(height=1, width=1)
 ## Plot
+g
 ggsave(file="export_latex/ovw_pub_cit_2ax.pdf",width=20,height=20,units="cm",dpi = 600, device = "pdf")
+ggsave(file="export_tiff/fig1.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 1: Number of articles and citations each year, 1956-2016", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
 datatable(xt)
 ```
 
@@ -1343,7 +1383,7 @@ g <-
 ggplot(jou) + geom_line(aes(y = value,x=year,color=variable,group=variable),size=0.8) + 
 	scale_x_continuous(breaks=seq(1956, 2016, 10)) + 
 	scale_colour_manual(name="",
-						values=c("tomato","blue4"),
+						values=c("#d7191c", "#2b83ba"),
 						labels=c("Number of cited journals","Number of published journals")) + 
 	ylab("Absolute") + xlab("Year") + 
 	scale_y_continuous(breaks=c(seq(0,600,50)), limits =c(0,600)) + 
@@ -1353,6 +1393,14 @@ ggplot(jou) + geom_line(aes(y = value,x=year,color=variable,group=variable),size
 ## Plot
 g	
 ggsave(file="export_latex/ovw_joupub_joucit.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig2.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 2: Number of published and cited journals eachyear, 1956-2016", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
+
 datatable(jou)
 ```
 
@@ -1380,6 +1428,13 @@ g$vp = grid::viewport(height=1, width=1)
 ## Plot
 g 
 ggsave(file="export_latex/ovw_citeable_articles.pdf",width=20,height=20,units="cm",dpi = 600, device = "pdf")
+ggsave(file="export_tiff/fig3.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 3: Share of cumulative articles in the respective year cited at least once, 1956-2016", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
 datatable(xt)
 ```	
 
@@ -1391,18 +1446,28 @@ xt <- merge(NLs[["ECON"]][,PID,year],ELs[["ECON"]],by.x="PID",by.y="source")[,.N
 # Plot
 xt <- melt(xt,id.var="year",variable.factor=T)
 
-
+g <- 
 ggplot(xt,aes(year)) + 
 	geom_line(aes(y = value,color=variable,group=variable), position = "identity",size=0.8) + 
     scale_x_continuous(breaks=c(seq(1956, 2016, 10),2016)) + 
-	scale_color_discrete(name="",
-                         labels=c("Top 1%", "Top 5%", "Top 10%", "Top 50%")) +
+	scale_color_manual(name="",
+                         labels=c("Top 1%", "Top 5%", "Top 10%", "Top 50%"),
+						 values=c("#d7191c", "#fdae61", "#2b83ba","#abdda4")) +
 	ylab("Percent") + xlab("Year") + 
 	scale_y_continuous(breaks=c(seq(0,100,10)), limits =c(0,100)) +	
 	geom_hline(yintercept = 0,color="#777777") + 
 	geom_vline(xintercept = 1956,color="#777777") + 
     theme(axis.text.x = element_text(hjust = 0.6))
+g
 ggsave(file="export_latex/share_top_perc.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig4.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 4: Share of citations to the top 1, 5, 10, 50 percent of articles each year, 1956-2016", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
+
 datatable(xt)
 
 ```
@@ -1429,6 +1494,13 @@ g <- ggplot(xt,aes(x=year)) +
 g$vp = grid::viewport(height=1, width=1)
 g
 ggsave(file="export_latex/gini.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig5.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 5: Gini coefficients for the distribution of citations among the cited articles in the respective year, 1956-2016", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
 datatable(xt)
 ```
 
@@ -1482,6 +1554,20 @@ print(xt,type="latex",hline.after=c(-1,-1,0,5,6,6),table.placement="!htbp",
 		file="export_latex/journal.tex",size="\\scriptsize",#sanitize.colnames.function = bold,
 		include.rownames=F,	align=alg,format.args=list(big.mark = ",")) 
 
+# Word Export
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, paste0("Table 2: ", cap), style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_flextable(doc, value = xtable_to_flextable(xt), pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "Notes. Top 100, 500, and 1000 articles refers to the most-cited articles in the data set.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+
+
+print(doc, target = "export_word/tables.docx")
+
+		
 # Plot table
 datatable(xt)
 ```
@@ -1503,8 +1589,9 @@ xt <- merge(cit_share,pub_share)[,pub_cumsum_share_norm:=pub_cumsum_share/pub_cu
 xt <- melt(xt[,-"pub_cumsum_share_norm"],id.vars="year",variable.factor=F)
 xt[,variable:=factor(variable,levels=c("pub_share","pub_cumsum_share","cit_share","cit_to_pub_share"))]
 labs <- c("Share of articles","Share of cumulative articles","Share of citations","Corrected share of citations")
+g <- 
 ggplot(xt,aes(y = value*100,x=year,color=variable,linetype=variable)) + geom_line(size=0.8) + 
-	scale_colour_manual(name="",values=c("blue4","blue4","tomato","tomato"),labels=labs) + 
+	scale_colour_manual(name="",values=c("#2b83ba","#2b83ba","#d7191c","#d7191c"),labels=labs) + 
 	scale_linetype_manual(name="",values=c(1,2,1,3),labels=labs) + 
     scale_x_continuous(breaks=c(seq(1956, 2016, 10),2016)) + 
 	ylab("Percent") + xlab("Year") +
@@ -1513,7 +1600,15 @@ ggplot(xt,aes(y = value*100,x=year,color=variable,linetype=variable)) + geom_lin
 	geom_vline(xintercept = 1956,color="#777777") + 
     theme(axis.text.x = element_text(hjust = 0.6)) + 
 	guides(color=guide_legend(nrow=2,byrow=FALSE),linetype=guide_legend(nrow=2,byrow=FALSE)) 
+g
 ggsave(file="export_latex/j_citation_to_cum_pub_share_ratio.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig6.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 6: Share of citations and articles of ‘Top Five’ journals, 1956-2014; corrected share normalised to 1970", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
 datatable(xt)
 ```		
 
@@ -1533,10 +1628,10 @@ xt <- xt[CJ(unique(xt$variable), seq(min(1954), max(2018)))][,
 	
 # Plot
 labs <- c("Top 100 articles","Top 500 articles","Top 1000 articles")
-ggplot(xt,aes(x=year,color=variable,group=variable))  + 
+g <- ggplot(xt,aes(x=year,color=variable,group=variable))  + 
 	geom_point(aes(y = value,shape=variable), alpha = 0.9,size=1.1) + 
 	geom_line(aes(y = average),size=0.8) + 
-    scale_color_discrete(name="",labels=labs) + 
+    scale_color_manual(name="",labels=labs,values=c("#d7191c", "#fdae61", "#2b83ba")) + 
 	scale_shape_discrete(name="",labels=labs) +
     scale_x_continuous(breaks=c(seq(1956, 2016, 10),2016)) + 
 	scale_y_continuous(breaks=c(seq(0,100,10))) +
@@ -1546,8 +1641,14 @@ ggplot(xt,aes(x=year,color=variable,group=variable))  +
     theme(axis.text.x = element_text(hjust = 0.6))  +
 	ylab("Percent") + xlab("Year") +
 	guides(color=guide_legend(nrow=2,byrow=TRUE))
-	
+g	
 ggsave(file="export_latex/j_share_in_top_abs.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig7.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 7: Share of ‘Top Five‘ journals in 100, 500, 1000 most-cited articles each year, 5-year weighted moving average, 1956-2016", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
 
 #values for text
 xt[year %in% 1972:1976,mean(value),by=variable]
@@ -1579,6 +1680,12 @@ ggplot(xt,aes(x=year)) +
 g$vp = grid::viewport(height=1, width=1)
 g
 ggsave(file="export_latex/j_gini.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig8.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 8: Gini coefficients of citations to cited journals in the respective year, 1956-2016", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
 
 datatable(xt)
 ```
@@ -1633,6 +1740,20 @@ print(xt,type="latex",hline.after=c(-1,-1,0,8,9,9),table.placement="!htbp",
 		size="\\scriptsize",#sanitize.colnames.function = bold,
 		include.rownames=F,format.args=list(big.mark = ","))
 
+		
+# Word Export
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, paste0("Table 3: ", cap), style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_flextable(doc, value = xtable_to_flextable(xt), pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "Notes.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "a The shares do not sum to 100 percent as co-authored articles are counted once for each region.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "b 13.07 percent of articles could not be assigned to a region.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
+
 # Plot
 datatable(xt)
 ```
@@ -1645,6 +1766,7 @@ setnames(art_share,c(regs_fn,"year"))
 art_share <- melt(art_share,id.vars="year",variable.factor=F)
 art_share[,variable:=factor(variable,levels=region_order)]
 
+g <-
 ggplot(art_share) + geom_bar(aes(y=value,x=year),stat="identity") + facet_wrap(~ variable)  + 
 		scale_x_continuous(breaks=c(seq(1980, 2014, 5))) + 
 		theme(axis.text.x = element_text(angle = 45, hjust = 0.6,size=14),
@@ -1652,19 +1774,30 @@ ggplot(art_share) + geom_bar(aes(y=value,x=year),stat="identity") + facet_wrap(~
 			axis.title = element_text(size=18)) +
 		ylim(0,100) + ylab("Percent") + xlab("Year")
 
+g
 ggsave(file="export_latex/r_share_art.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig9.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 9: Share of articles by world region each year, 1980-2014", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
 
 datatable(art_share)
 
 ## with lines (for revision letter)
+g <- 
 ggplot(art_share) + geom_line(aes(y=value,x=year),stat="identity") + facet_wrap(~ variable)  + 
 		scale_x_continuous(breaks=c(seq(1980, 2014, 5))) + 
 		theme(axis.text.x = element_text(angle = 45, hjust = 0.6,size=14),
 			text = element_text(size=24),axis.text.y = element_text(size=14), 
 			axis.title = element_text(size=18)) +
 		ylim(0,100) + ylab("Percent") + xlab("Year")
+g
 ggsave(file="export_latex/r_share_art_lines.pdf",width=20,height=20,units="cm")
 ggsave(file="export_latex/r_share_art_lines.png",width=20,height=20,units="cm")
+
+
 
 
 ```
@@ -1681,13 +1814,22 @@ setnames(cit_share,c(regs_fn,"year"))
 cit_share <- melt(cit_share,id.vars="year",variable.factor=F)
 cit_share[,variable:=factor(variable,levels=region_order)]
 
+g <- 
 ggplot(cit_share) + geom_bar(aes(y=value,x=year),stat="identity") + facet_wrap(~ variable)  + 
 		scale_x_continuous(breaks=c(seq(1980, 2014, 5))) + 
 		theme(axis.text.x = element_text(angle = 45, hjust = 0.6,size=14),
 			text = element_text(size=24),axis.text.y = element_text(size=14), 
 			axis.title = element_text(size=18)) +
 		ylim(0,100) + ylab("Percent") + xlab("Year")
+g
+
 ggsave(file="export_latex/r_share_cit.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig10.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 10: Share of citations to world region each year, 1980-2014", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
 
 datatable(cit_share)
 
@@ -1764,6 +1906,17 @@ print(xt,type="latex",hline.after=c(-1,-1,0,20,22,22),table.placement="!htbp",
          file="export_latex/i_institutions.tex",size="\\scriptsize",
 		 include.rownames=F,#sanitize.colnames.function = bold,
 		 format.args=list(big.mark = ","))
+		 
+# Word Export
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, paste0("Table 4: ", cap), style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_flextable(doc, value = xtable_to_flextable(xt), pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "Notes. Citations per article specifies the mean number of citations an article receives. Top 100, 500, and 1000 articles refers to the most-cited articles in the data set.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
 # Plot
 datatable(xt)
 ```
@@ -1787,8 +1940,9 @@ xt[,cit_share_corr:=cit_share/cum_share_norm]
 xt <- melt(xt[,-"cum_share_norm"],id.vars="year",variable.factor=F)
 xt[,variable:=factor(variable,levels=c("art_share","cum_share","cit_share","cit_share_corr"))]
 labs <- c("Share of articles","Share of cumulative articles","Share of citations","Corrected share of citations")
+g <- 
 ggplot(xt,aes(y = value,x=year,color=variable,linetype=variable)) + geom_line(size=0.8) + 
-	scale_colour_manual(name="",values=c("blue4","blue4","tomato","tomato"),labels=labs) + 
+	scale_colour_manual(name="",values=c("#2b83ba","#2b83ba","#d7191c","#d7191c"),labels=labs) + 
 	scale_linetype_manual(name="",values=c(1,2,1,3),labels=labs) + 
     scale_x_continuous(breaks=c(seq(1980, 2014, 5),2014)) + 
 	ylab("Percent") + xlab("Year") +
@@ -1797,7 +1951,15 @@ ggplot(xt,aes(y = value,x=year,color=variable,linetype=variable)) + geom_line(si
 	geom_vline(xintercept = 1980,color="#777777") + 
     theme(axis.text.x = element_text(hjust = 0.6)) + 
 	guides(color=guide_legend(nrow=2,byrow=FALSE),linetype=guide_legend(nrow=2,byrow=FALSE)) 
+g
 ggsave(file="export_latex/i_citation_to_cum_pub_share_ratio.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig11.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 11: Share of articles and citations of top 20 institutions, 1980-2014; corrected share normalised to 1995", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
 datatable(xt)
 ```		
 
@@ -1820,7 +1982,7 @@ labs <- c("Top 100 articles","Top 500 articles","Top 1000 articles")
 ggplot(xt,aes(x=year,color=variable,group=variable))  + 
 	geom_point(aes(y = value,shape=variable), alpha = 0.9,size=1.1) + 
 	geom_line(aes(y = average),size=0.8) + 
-    scale_color_discrete(name="",labels=labs) + 
+    scale_color_manual(name="",labels=labs,values=c("#d7191c", "#fdae61", "#2b83ba")) + 
 	scale_shape_discrete(name="",labels=labs) +
     scale_x_continuous(breaks=c(seq(1980, 2014, 5),2014)) + 
 	scale_y_continuous(breaks=c(seq(0,100,10))) +
@@ -1831,6 +1993,13 @@ ggplot(xt,aes(x=year,color=variable,group=variable))  +
 	ylab("Percent") + xlab("Year") +
 	guides(color=guide_legend(nrow=2,byrow=TRUE))
 ggsave(file="export_latex/i_share_in_top_abs.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig12.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 12: Share of top 20 institutions in the 100, 500, 1000 most-cited articles each year, 5-year weighted moving average, 1980-2014", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
 datatable(xt)
 
 ```
@@ -1892,6 +2061,16 @@ print(xt,type="latex",hline.after=c(-1,-1,0,8,8),table.placement="!htbp",size="\
 		file="export_latex/authors.tex",#sanitize.colnames.function = bold,
 		include.rownames=F,format.args=list(big.mark = ","))
 
+# Word Export
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, paste0("Table 5: ", cap), style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_flextable(doc, value = xtable_to_flextable(xt), pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "Notes. A full list of the 100 top authors can be found in table 8 in the appendix.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+		
 # Plot
 datatable(xt)
 ```
@@ -1934,6 +2113,18 @@ xt <- xtable(xt,caption=cap,align=c("r",alg),label=lab,digits=cbind(matrix(rep(0
 print(xt,type="latex",hline.after=c(-1,-1,0,11,11),table.placement="!htbp",
 		 size="\\scriptsize",file="export_latex/school_attr.tex",#sanitize.colnames.function = bold,
 		 include.rownames=F,format.args=list(big.mark = ","))
+
+# Word Export
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, paste0("Table 6: ", cap), style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_flextable(doc, value = xtable_to_flextable(xt), pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "Notes.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "a Refers to all journals that are in the Web of Science subject category economics but are not listed in the Heterodox Economics Directory.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "b Refers to all journals that are in the Web of Science subject category economics and are listed in the Heterodox Economics Directory.", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+		 
 # Plot
 datatable(xt)
 ```
@@ -1956,8 +2147,9 @@ xt[,cit_share_corr:=cit_share/cum_share_norm]
 xt <- melt(xt[,-"cum_share_norm"],id.vars="year",variable.factor=F)
 xt[,variable:=factor(variable,levels=c("art_share","cum_share","cit_share","cit_share_corr"))]
 labs <- c("Share of articles","Share of cumulative articles","Share of citations","Corrected share of citations")
+g <- 
 ggplot(xt,aes(y = value,x=year,color=variable,linetype=variable)) + geom_line(size=0.8) + 
-	scale_colour_manual(name="",values=c("blue4","blue4","tomato","tomato"),labels=labs) + 
+	scale_colour_manual(name="",values=c("#2b83ba","#2b83ba","#d7191c","#d7191c"),labels=labs) + 
 	scale_linetype_manual(name="",values=c(1,2,1,3),labels=labs) + 
     scale_x_continuous(breaks=seq(1956, 2016, 10)) + 
 	ylab("Percent") + xlab("Year") +
@@ -1966,7 +2158,14 @@ ggplot(xt,aes(y = value,x=year,color=variable,linetype=variable)) + geom_line(si
 	geom_vline(xintercept = 1956,color="#777777") + 
     theme(axis.text.x = element_text(hjust = 0.6)) + 
 	guides(color=guide_legend(nrow=2,byrow=FALSE),linetype=guide_legend(nrow=2,byrow=FALSE)) 
+g
 ggsave(file="export_latex/sc_citation_to_cum_pub_share_ratio.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig13.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 13: Share of heterodox articles and citations, 1956-2016; corrected share normalised to 1970", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
 
 # Numbers for paper
 xt[year %in% c(1956,1972,2016)& variable %in% c("art_share","cit_share")]
@@ -1991,10 +2190,11 @@ xt <- xt[CJ(unique(xt$variable), seq(min(1954), max(2018)))][,
 	
 # Plot
 labs <- c("Top 1% articles","Top 5% articles","Top 10% articles","Top 50% articles")
+g <- 
 ggplot(xt,aes(x=year,color=variable,group=variable))  + 
 	geom_point(aes(y = value,shape=variable), alpha = 0.9,size=1.1) + 
 	geom_line(aes(y = average),size=0.8) + 
-    scale_color_discrete(name="",labels=labs) + 
+    scale_color_manual(name="",labels=labs,values=c("#d7191c", "#fdae61", "#2b83ba","#abdda4")) + 
 	scale_shape_discrete(name="",labels=labs) +
     scale_x_continuous(breaks=c(seq(1956, 2016, 10),2016)) + 
 	scale_y_continuous(breaks=c(seq(0,100,10))) +
@@ -2004,7 +2204,15 @@ ggplot(xt,aes(x=year,color=variable,group=variable))  +
     theme(axis.text.x = element_text(hjust = 0.6))  +
 	ylab("Percent") + xlab("Year") +
 	guides(color=guide_legend(nrow=2,byrow=TRUE))
+g
 ggsave(file="export_latex/sc_share_in_top_perc_ma.pdf",width=20,height=20,units="cm")
+ggsave(file="export_tiff/fig14.tiff",width=20,height=20,units="cm",dpi = 600, device = "tiff")
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, "Figure 14: Share of top 1, 5, 10, 50 percent of articles that were published in heterodox journals, 1956-2016", style = NULL, pos = "after")
+doc <- body_add_gg(doc, g , style = "centered",width=4,height=4)
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
 # Numbers for paper
 xt[year %in% c(1956,1975,2016)& variable %in% c("V1","V2","V3","V4")]
 
@@ -2050,6 +2258,17 @@ xt <- xtable(xt,caption=cap,align=c("r",alg),label=lab,digits=dig) #
 print(xt,type="latex",hline.after=c(-1,-1,0,50,50),table.placement="!htbp",
         file="export_latex/a_top.tex", size="\\scriptsize",# sanitize.colnames.function = bold,
 		include.rownames=F,format.args=list(big.mark = ","))
+		
+# Word Export
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, paste0("Table 8: ", cap), style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+names(xt)[6:10] <- paste0(names(xt)[6:10],"-")
+doc <- body_add_flextable(doc, value = xtable_to_flextable(xt), pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
 # Plot
 datatable(xt)
 ```
@@ -2121,6 +2340,19 @@ print(xt,type="latex",hline.after=c(-1,-1,0,50,50),table.placement="!htbp",
         file="export_latex/countries_top100.tex", size="\\scriptsize",# sanitize.colnames.function = bold,
 		include.rownames=F,format.args=list(big.mark = ","))
 
+		
+# Word Export
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, paste0("Table 9: ", cap), style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+names(xt)[7:12] <- paste0(names(xt)[7:12],"-")
+doc <- body_add_flextable(doc, value = xtable_to_flextable(xt), pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "Notes. WR: World Region, NA: North America, WE: Western Europe, O: Oceania, ME: Middle East, AS: Asia, EE: Eastern Europe, LA:Latin America, AF: Africa.", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
+
+
 # Plot
 datatable(xt)
 ```
@@ -2157,5 +2389,15 @@ xt <- xtable(xt[1:100],caption=cap,align=c("r",alg),label=lab,digits=dig) #
 print(xt,type="latex",hline.after=c(-1,-1,0,100),table.placement="!htbp",
         file="export_latex/journal_top100.tex", size="\\scriptsize",# sanitize.colnames.function = bold,
 		include.rownames=F,format.args=list(big.mark = ","))
+		
+		
+# Word Export
+doc <- body_add_break(doc, pos = "after")
+doc <- body_add_par(doc, paste0("Table 10: ", cap), style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_flextable(doc, value = xtable_to_flextable(xt), pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+doc <- body_add_par(doc, "", style = NULL, pos = "after")
+print(doc, target = "export_word/tables.docx")
 ```
 
